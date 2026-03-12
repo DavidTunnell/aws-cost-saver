@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { CollectedData } from "../aws/collector";
+import { getGravitonEquivalent, getSnapshotMonthlyPrice, getEbsMonthlyPrice, getGp2ToGp3Savings } from "../aws/pricing";
 
 export interface Recommendation {
   instanceId: string;
@@ -13,73 +14,289 @@ export interface Recommendation {
   reasoning: string;
 }
 
-const SYSTEM_PROMPT = `You are an AWS cost optimization expert. You analyze EC2 instance data and provide specific, actionable cost savings recommendations.
+// ─── Deterministic helpers ───────────────────────────────────────────────────
 
-For each finding, you MUST return a JSON object with these exact fields:
-- instanceId: the EC2 instance ID (or resource ID for EBS/EIP)
-- instanceName: the Name tag or description
-- instanceType: current instance type
-- category: one of "right-size", "stop", "generation-upgrade", "reserved-instance", "savings-plan", "unused-eip", "orphan-ebs", "idle"
-- severity: "high" (>$50/mo savings), "medium" ($10-50/mo), or "low" (<$10/mo)
-- currentMonthlyCost: estimated current monthly cost in USD
-- estimatedSavings: estimated monthly savings in USD
-- action: a clear, specific action the user should take
-- reasoning: 1-2 sentences explaining why
+function getSeverity(savings: number): "high" | "medium" | "low" {
+  if (savings > 50) return "high";
+  if (savings >= 10) return "medium";
+  return "low";
+}
 
-Analysis rules:
-- CPU avg <10% over 14 days with max <30%: recommend right-sizing to a smaller instance
-- CPU avg <5% with low network: flag as potentially idle, recommend stopping or terminating
-- Old generation types (m3, m4, c3, c4, r3, r4, t1, t2, i2, d2): recommend upgrading to current generation (m7i, c7i, r7i, t3, etc.) for ~10-20% cost savings with better performance
-- Stopped instances: flag EBS costs still being incurred
-- Unattached EBS volumes: recommend deleting or snapshotting
-- Idle Elastic IPs: recommend releasing (costs ~$3.65/month each since Feb 2024)
-- Consistent usage (running 24/7 for months): recommend Reserved Instances or Savings Plans for 30-60% savings
-- For right-sizing: suggest the specific smaller instance type (e.g., m5.xlarge -> m5.large)
+const OLD_GEN_FAMILIES = new Set(["m3", "m4", "c3", "c4", "r3", "r4", "t1", "t2", "i2", "d2"]);
 
-Return ONLY a JSON array of recommendation objects. No markdown, no explanation outside the JSON.
-If there are no recommendations for an account, return an empty array [].`;
+function getInstanceFamily(instanceType: string): string {
+  return instanceType.split(".")[0];
+}
+
+/**
+ * Generates recommendations for 9 categories that can be computed deterministically
+ * from the collected data — no LLM needed. This eliminates run-to-run variance for
+ * the majority of recommendation categories.
+ */
+function generateDeterministicRecs(data: CollectedData): Recommendation[] {
+  const recs: Recommendation[] = [];
+  const usedAmiIds = new Set(data.instances.map((i) => i.imageId).filter(Boolean));
+  // Track snapshot IDs used by unused AMIs to avoid double-counting with snapshot-cleanup
+  const snapshotIdsFromUnusedAmis = new Set<string>();
+
+  // 1. unused-eip: Each idle EIP = $3.65/mo
+  for (const eip of data.idleEips) {
+    recs.push({
+      instanceId: eip.allocationId,
+      instanceName: eip.publicIp,
+      instanceType: "eip",
+      category: "unused-eip",
+      severity: "low",
+      currentMonthlyCost: 3.65,
+      estimatedSavings: 3.65,
+      action: `Release idle Elastic IP ${eip.publicIp} (${eip.allocationId})`,
+      reasoning: "This Elastic IP is not associated with any running instance and costs $3.65/mo since Feb 2024 pricing.",
+    });
+  }
+
+  // 2. orphan-ebs: Unattached EBS volumes
+  for (const vol of data.orphanVolumes) {
+    const cost = getEbsMonthlyPrice(vol.volumeType, vol.size, null);
+    recs.push({
+      instanceId: vol.volumeId,
+      instanceName: vol.volumeId,
+      instanceType: `${vol.volumeType} ${vol.size}GB`,
+      category: "orphan-ebs",
+      severity: getSeverity(cost),
+      currentMonthlyCost: cost,
+      estimatedSavings: cost,
+      action: `Delete or snapshot unattached volume ${vol.volumeId} (${vol.size}GB ${vol.volumeType})`,
+      reasoning: `Unattached EBS volume created ${vol.createTime}, costing $${cost.toFixed(2)}/mo with no instance attached.`,
+    });
+  }
+
+  // 3. unused-ami: AMIs not used by any instance
+  if (data.amis) {
+    for (const ami of data.amis) {
+      if (usedAmiIds.has(ami.imageId)) continue;
+      const cost = getSnapshotMonthlyPrice(ami.totalSnapshotSizeGb);
+      if (cost <= 0) continue;
+      recs.push({
+        instanceId: ami.imageId,
+        instanceName: ami.name || ami.imageId,
+        instanceType: "ami",
+        category: "unused-ami",
+        severity: getSeverity(cost),
+        currentMonthlyCost: cost,
+        estimatedSavings: cost,
+        action: `Deregister unused AMI ${ami.imageId} ("${ami.name}") and delete its ${ami.snapshotIds.length} backing snapshots`,
+        reasoning: `AMI not used by any instance. Backing snapshots (${ami.totalSnapshotSizeGb}GB) cost $${cost.toFixed(2)}/mo.`,
+      });
+      for (const snapId of ami.snapshotIds) {
+        snapshotIdsFromUnusedAmis.add(snapId);
+      }
+    }
+  }
+
+  // 4. snapshot-cleanup: Orphan snapshots (volume deleted, no AMI) — exclude those already in unused-ami
+  for (const snap of data.snapshots) {
+    if (snapshotIdsFromUnusedAmis.has(snap.snapshotId)) continue;
+    if (snap.usedByAmi) continue; // BACKING_AMI — only cleanup if AMI is unused (handled above)
+    if (snap.sourceVolumeExists) continue; // ACTIVE_BACKUP — not orphan
+    // This is an ORPHAN snapshot
+    const cost = snap.monthlyCost;
+    if (cost <= 0) continue;
+    recs.push({
+      instanceId: snap.snapshotId,
+      instanceName: snap.description || snap.snapshotId,
+      instanceType: "snapshot",
+      category: "snapshot-cleanup",
+      severity: getSeverity(cost),
+      currentMonthlyCost: cost,
+      estimatedSavings: cost,
+      action: `Delete orphan snapshot ${snap.snapshotId} (${snap.volumeSizeGb}GB)`,
+      reasoning: `Orphan snapshot — source volume ${snap.volumeId || "unknown"} no longer exists and snapshot is not backing any AMI. Created ${snap.startTime}.`,
+    });
+  }
+
+  // 5. stopped-ebs: Stopped instances still paying for EBS
+  for (const inst of data.instances) {
+    if (inst.state !== "stopped" || inst.ebsMonthlyCost <= 0) continue;
+    recs.push({
+      instanceId: inst.instanceId,
+      instanceName: inst.name,
+      instanceType: inst.instanceType,
+      category: "stopped-ebs",
+      severity: getSeverity(inst.ebsMonthlyCost),
+      currentMonthlyCost: inst.ebsMonthlyCost,
+      estimatedSavings: inst.ebsMonthlyCost,
+      action: `Snapshot and delete EBS volumes on stopped instance ${inst.instanceId} ("${inst.name}") to save $${inst.ebsMonthlyCost.toFixed(2)}/mo`,
+      reasoning: `Instance is stopped but ${inst.attachedVolumes.length} attached EBS volume(s) still incur $${inst.ebsMonthlyCost.toFixed(2)}/mo in storage costs.`,
+    });
+  }
+
+  // 6. ebs-optimize: gp2 → gp3 migration
+  for (const inst of data.instances) {
+    for (const vol of inst.attachedVolumes) {
+      if (vol.volumeType !== "gp2") continue;
+      const savings = getGp2ToGp3Savings(vol.sizeGb);
+      if (savings <= 0) continue;
+      recs.push({
+        instanceId: vol.volumeId,
+        instanceName: `${inst.name} (${inst.instanceId})`,
+        instanceType: `gp2 ${vol.sizeGb}GB`,
+        category: "ebs-optimize",
+        severity: getSeverity(savings),
+        currentMonthlyCost: vol.monthlyPrice,
+        estimatedSavings: savings,
+        action: `Migrate volume ${vol.volumeId} from gp2 to gp3 (${vol.sizeGb}GB on ${inst.instanceId})`,
+        reasoning: `gp3 provides 3000 baseline IOPS (vs gp2 size-dependent) at 20% lower cost, saving $${savings.toFixed(2)}/mo.`,
+      });
+    }
+  }
+
+  // 7. ebs-iops-optimize: io1/io2 IOPS waste
+  for (const inst of data.instances) {
+    for (const vol of inst.attachedVolumes) {
+      if (!vol.iopsWasteMonthlyCost || vol.iopsWasteMonthlyCost <= 0) continue;
+      recs.push({
+        instanceId: vol.volumeId,
+        instanceName: `${inst.name} (${inst.instanceId})`,
+        instanceType: `${vol.volumeType} ${vol.sizeGb}GB`,
+        category: "ebs-iops-optimize",
+        severity: getSeverity(vol.iopsWasteMonthlyCost),
+        currentMonthlyCost: vol.monthlyPrice,
+        estimatedSavings: vol.iopsWasteMonthlyCost,
+        action: `Reduce provisioned IOPS on ${vol.volumeId} or migrate to gp3 (3000 IOPS baseline included)`,
+        reasoning: `Provisioned IOPS far exceed actual usage. Reducing to match actual needs saves $${vol.iopsWasteMonthlyCost.toFixed(2)}/mo.`,
+      });
+    }
+  }
+
+  // 8. graviton-migrate: x86_64 instances with graviton pricing available
+  for (const inst of data.instances) {
+    if (inst.state !== "running") continue;
+    if (inst.architecture !== "x86_64") continue;
+    if (!inst.gravitonEquivalent || inst.gravitonHourlyPrice == null || inst.onDemandHourly == null) continue;
+    const savings = (inst.onDemandHourly - inst.gravitonHourlyPrice) * 730;
+    if (savings <= 0) continue;
+    recs.push({
+      instanceId: inst.instanceId,
+      instanceName: inst.name,
+      instanceType: inst.instanceType,
+      category: "graviton-migrate",
+      severity: getSeverity(savings),
+      currentMonthlyCost: inst.monthlyEstimate ?? inst.onDemandHourly * 730,
+      estimatedSavings: savings,
+      action: `Migrate ${inst.instanceId} from ${inst.instanceType} to ${inst.gravitonEquivalent} (Graviton/ARM)`,
+      reasoning: `Graviton equivalent saves $${savings.toFixed(2)}/mo ($${inst.onDemandHourly.toFixed(4)}/hr → $${inst.gravitonHourlyPrice.toFixed(4)}/hr). Requires ARM compatibility testing.`,
+    });
+  }
+
+  // 9. generation-upgrade: Old instance families
+  for (const inst of data.instances) {
+    if (inst.state !== "running") continue;
+    const family = getInstanceFamily(inst.instanceType);
+    if (!OLD_GEN_FAMILIES.has(family)) continue;
+    const monthlyCost = inst.monthlyEstimate ?? 0;
+    if (monthlyCost <= 0) continue;
+    const savings = monthlyCost * 0.15;
+    recs.push({
+      instanceId: inst.instanceId,
+      instanceName: inst.name,
+      instanceType: inst.instanceType,
+      category: "generation-upgrade",
+      severity: getSeverity(savings),
+      currentMonthlyCost: monthlyCost,
+      estimatedSavings: savings,
+      action: `Upgrade ${inst.instanceId} from ${inst.instanceType} to current generation (e.g., ${family.replace(/\d+/, "7")}i equivalent)`,
+      reasoning: `${inst.instanceType} is an old generation type. Current generation offers ~15% cost savings with better performance.`,
+    });
+  }
+
+  return recs;
+}
+
+// ─── LLM-only prompt (judgment-based categories) ────────────────────────────
+
+const SYSTEM_PROMPT = `You are an AWS cost optimization expert. Analyze EC2 instance metrics and return JSON recommendations.
+
+Return a JSON array of objects with these fields:
+- instanceId, instanceName, instanceType, category, severity ("high"/"medium"/"low"), currentMonthlyCost, estimatedSavings, action, reasoning
+
+You ONLY analyze for these categories (all others are handled separately — do NOT generate them):
+- "right-size": CPU avg <10%, max <30% → suggest specific smaller type. Savings = 50% of on-demand estimate.
+- "stop"/"idle": CPU avg <5%, low network → recommend stopping. currentMonthlyCost = on-demand + EBS. estimatedSavings = on-demand only.
+- "schedule-stop": dev/test/staging tags + running 24/7 → stop nights/weekends. estimatedSavings = 65% of on-demand.
+- "reserved-instance"/"savings-plan": consistent 24/7 usage for months → RI/SP. estimatedSavings = 40% of on-demand.
+
+Do NOT generate recommendations for: unused-eip, orphan-ebs, snapshot-cleanup, unused-ami, stopped-ebs, ebs-optimize, ebs-iops-optimize, graviton-migrate, generation-upgrade. These are computed separately.
+
+Severity: high (>$50/mo), medium ($10-50/mo), low (<$10/mo).
+Do NOT double-count: if both right-size and stop apply, only recommend stop.
+Return ONLY a JSON array. No markdown, no explanation outside the JSON.
+If no recommendations, return [].`;
 
 export async function analyzeWithClaude(
   data: CollectedData
 ): Promise<Recommendation[]> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      `ANTHROPIC_API_KEY is not set. Env keys available: ${Object.keys(process.env).filter(k => k.includes("ANTHROPIC")).join(", ") || "none matching ANTHROPIC"}`
-    );
+  // Step 1: Deterministic recs (always identical for same input data)
+  const deterministicRecs = generateDeterministicRecs(data);
+
+  // Step 2: LLM recs for judgment-based categories (right-size, stop, idle, schedule-stop, RI/SP)
+  const runningInstances = data.instances.filter((i) => i.state === "running");
+  let llmRecs: Recommendation[] = [];
+
+  if (runningInstances.length > 0) {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      throw new Error(
+        `ANTHROPIC_API_KEY is not set. Env keys available: ${Object.keys(process.env).filter(k => k.includes("ANTHROPIC")).join(", ") || "none matching ANTHROPIC"}`
+      );
+    }
+    const client = new Anthropic({ apiKey });
+
+    const CHUNK_SIZE = 25;
+    if (runningInstances.length > CHUNK_SIZE) {
+      llmRecs = await analyzeLlmInChunks(client, data, CHUNK_SIZE);
+    } else {
+      const prompt = buildPrompt(data);
+      const response = await client.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: "user", content: prompt }],
+      });
+      llmRecs = parseResponse(response);
+    }
   }
 
-  const client = new Anthropic({ apiKey });
-
-  // Build a concise summary for Claude
-  const prompt = buildPrompt(data);
-
-  // For large datasets, chunk instances
-  const CHUNK_SIZE = 25;
-  if (data.instances.length > CHUNK_SIZE) {
-    return analyzeInChunks(client, data, CHUNK_SIZE);
-  }
-
-  const response = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 4096,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  return parseResponse(response);
+  // Step 3: Merge — deterministic wins on collisions
+  const merged = mergeRecommendations(deterministicRecs, llmRecs);
+  return deduplicateRecommendations(merged);
 }
 
-async function analyzeInChunks(
+/**
+ * Merges deterministic and LLM recommendations. Deterministic recs win on
+ * instanceId:category key collisions (safety net if LLM emits a deterministic category).
+ */
+function mergeRecommendations(deterministic: Recommendation[], llm: Recommendation[]): Recommendation[] {
+  const deterministicCategories = new Set([
+    "unused-eip", "orphan-ebs", "snapshot-cleanup", "unused-ami",
+    "stopped-ebs", "ebs-optimize", "ebs-iops-optimize", "graviton-migrate", "generation-upgrade",
+  ]);
+
+  // Filter out any LLM recs that overlap with deterministic categories
+  const filteredLlm = llm.filter((r) => !deterministicCategories.has(r.category));
+  return [...deterministic, ...filteredLlm];
+}
+
+async function analyzeLlmInChunks(
   client: Anthropic,
   data: CollectedData,
   chunkSize: number
 ): Promise<Recommendation[]> {
   const allRecommendations: Recommendation[] = [];
+  const runningInstances = data.instances.filter((i) => i.state === "running");
   const instanceChunks: CollectedData["instances"][] = [];
 
-  for (let i = 0; i < data.instances.length; i += chunkSize) {
-    instanceChunks.push(data.instances.slice(i, i + chunkSize));
+  for (let i = 0; i < runningInstances.length; i += chunkSize) {
+    instanceChunks.push(runningInstances.slice(i, i + chunkSize));
   }
 
   for (const chunk of instanceChunks) {
@@ -99,33 +316,32 @@ async function analyzeInChunks(
     allRecommendations.push(...parseResponse(response));
   }
 
-  // Handle orphan volumes and idle EIPs in a separate call if present
-  if (data.orphanVolumes.length > 0 || data.idleEips.length > 0) {
-    const resourcePrompt = buildResourceOnlyPrompt(data);
-    const response = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 2048,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: resourcePrompt }],
-    });
-    allRecommendations.push(...parseResponse(response));
-  }
-
   return allRecommendations;
 }
 
+/**
+ * Builds an LLM prompt containing only running instance data.
+ * The LLM only needs to judge: right-size, stop/idle, schedule-stop, RI/SP.
+ */
 function buildPrompt(data: CollectedData): string {
-  let prompt = `Analyze the following AWS account for EC2 cost savings opportunities.\n\n`;
+  let prompt = `Analyze the following running EC2 instances for cost savings.\n\n`;
   prompt += `Account: ${data.accountName} (${data.accountId})\n`;
-  prompt += `Region: ${data.region}\n`;
-  prompt += `Collected at: ${data.collectedAt}\n\n`;
+  prompt += `Region: ${data.region}\n\n`;
 
-  prompt += `## EC2 Instances (${data.instances.length})\n\n`;
-  for (const inst of data.instances) {
-    prompt += `- **${inst.instanceId}** "${inst.name}" | ${inst.instanceType} | ${inst.state}`;
-    if (inst.state === "running") {
-      prompt += ` | CPU avg: ${inst.cpuAvg?.toFixed(1) ?? "N/A"}%, max: ${inst.cpuMax?.toFixed(1) ?? "N/A"}%`;
-      prompt += ` | Net in: ${formatBytes(inst.networkInAvg)}, out: ${formatBytes(inst.networkOutAvg)}`;
+  const runningInstances = data.instances.filter((i) => i.state === "running");
+  prompt += `## Running EC2 Instances (${runningInstances.length})\n\n`;
+
+  for (const inst of runningInstances) {
+    prompt += `- **${inst.instanceId}** "${inst.name}" | ${inst.instanceType} | arch: ${inst.architecture}`;
+    prompt += ` | CPU avg: ${inst.cpuAvg?.toFixed(1) ?? "N/A"}%, max: ${inst.cpuMax?.toFixed(1) ?? "N/A"}%`;
+    prompt += ` | Net in: ${formatBytes(inst.networkInAvg)} avg / ${formatBytes(inst.networkInMax)} max`;
+    prompt += ` | Net out: ${formatBytes(inst.networkOutAvg)} avg / ${formatBytes(inst.networkOutMax)} max`;
+
+    if (inst.diskReadOps != null || inst.diskWriteOps != null) {
+      prompt += ` | Disk I/O: ${inst.diskReadOps?.toFixed(1) ?? "N/A"} read, ${inst.diskWriteOps?.toFixed(1) ?? "N/A"} write ops/hr`;
+    }
+    if (inst.cpuCreditBalance != null) {
+      prompt += ` | CPU credits: ${inst.cpuCreditBalance.toFixed(1)}`;
     }
     if (inst.monthlyEstimate != null) {
       prompt += ` | On-demand est: $${inst.monthlyEstimate.toFixed(2)}/mo`;
@@ -133,45 +349,20 @@ function buildPrompt(data: CollectedData): string {
     if (inst.actualMonthlyCost != null) {
       prompt += ` | Actual cost: $${inst.actualMonthlyCost.toFixed(2)}/mo`;
     }
+    if (inst.ebsMonthlyCost > 0) {
+      prompt += ` | EBS cost: $${inst.ebsMonthlyCost.toFixed(2)}/mo`;
+    }
+
+    // Tags for schedule-stop detection
+    const envTag = inst.tags["Environment"] || inst.tags["Env"] || inst.tags["env"] || inst.tags["environment"] || "";
+    const scheduleTag = inst.tags["Schedule"] || inst.tags["schedule"] || "";
+    const purposeTag = inst.tags["Purpose"] || inst.tags["purpose"] || "";
+    if (envTag) prompt += ` | env=${envTag}`;
+    if (scheduleTag) prompt += ` | schedule=${scheduleTag}`;
+    if (purposeTag) prompt += ` | purpose=${purposeTag}`;
+
     prompt += ` | Launched: ${inst.launchTime}`;
     prompt += `\n`;
-  }
-
-  if (data.orphanVolumes.length > 0) {
-    prompt += `\n## Unattached EBS Volumes (${data.orphanVolumes.length})\n\n`;
-    for (const vol of data.orphanVolumes) {
-      prompt += `- ${vol.volumeId} | ${vol.size}GB ${vol.volumeType} | Created: ${vol.createTime}\n`;
-    }
-  }
-
-  if (data.idleEips.length > 0) {
-    prompt += `\n## Idle Elastic IPs (${data.idleEips.length})\n\n`;
-    for (const eip of data.idleEips) {
-      prompt += `- ${eip.publicIp} (${eip.allocationId})\n`;
-    }
-  }
-
-  prompt += `\nProvide your cost savings recommendations as a JSON array.`;
-  return prompt;
-}
-
-function buildResourceOnlyPrompt(data: CollectedData): string {
-  let prompt = `Analyze these orphaned AWS resources for cost savings.\n\n`;
-  prompt += `Account: ${data.accountName} (${data.accountId})\n`;
-  prompt += `Region: ${data.region}\n\n`;
-
-  if (data.orphanVolumes.length > 0) {
-    prompt += `## Unattached EBS Volumes (${data.orphanVolumes.length})\n\n`;
-    for (const vol of data.orphanVolumes) {
-      prompt += `- ${vol.volumeId} | ${vol.size}GB ${vol.volumeType} | Created: ${vol.createTime}\n`;
-    }
-  }
-
-  if (data.idleEips.length > 0) {
-    prompt += `\n## Idle Elastic IPs (${data.idleEips.length})\n\n`;
-    for (const eip of data.idleEips) {
-      prompt += `- ${eip.publicIp} (${eip.allocationId})\n`;
-    }
   }
 
   prompt += `\nProvide your cost savings recommendations as a JSON array.`;
@@ -183,6 +374,68 @@ function formatBytes(bytes: number | null): string {
   if (bytes < 1024) return `${bytes.toFixed(0)}B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+/**
+ * Deduplicates recommendations for the same resource to prevent inflated totals.
+ * - stop/idle subsumes right-size, graviton, schedule-stop, generation-upgrade (but NOT stopped-ebs)
+ * - right-size + graviton overlap: zero out the smaller saving
+ * - Same resource + same category: keep first occurrence
+ * Note: AMI/snapshot overlap is already handled in generateDeterministicRecs.
+ */
+function deduplicateRecommendations(recs: Recommendation[]): Recommendation[] {
+  const byResource = new Map<string, Recommendation[]>();
+  for (const rec of recs) {
+    if (!rec.instanceId) continue;
+    if (!byResource.has(rec.instanceId)) byResource.set(rec.instanceId, []);
+    byResource.get(rec.instanceId)!.push(rec);
+  }
+
+  const result: Recommendation[] = [];
+
+  for (const [, group] of byResource) {
+    // Deduplicate same resource + same category (keep first)
+    const uniqueByCategory: Recommendation[] = [];
+    const catSeen = new Set<string>();
+    for (const rec of group) {
+      const catKey = `${rec.instanceId}:${rec.category}`;
+      if (catSeen.has(catKey)) continue;
+      catSeen.add(catKey);
+      uniqueByCategory.push(rec);
+    }
+
+    const hasStop = uniqueByCategory.some((r) => r.category === "stop" || r.category === "idle");
+
+    if (hasStop) {
+      // Stop/idle subsumes compute-related recs but keep storage recs
+      for (const rec of uniqueByCategory) {
+        if (["stop", "idle", "stopped-ebs", "ebs-optimize", "ebs-iops-optimize", "orphan-ebs"].includes(rec.category)) {
+          result.push(rec);
+        }
+      }
+      continue;
+    }
+
+    // Handle right-size + graviton overlap: zero out the smaller saving
+    const rightSize = uniqueByCategory.find((r) => r.category === "right-size");
+    const graviton = uniqueByCategory.find((r) => r.category === "graviton-migrate");
+    if (rightSize && graviton) {
+      if (rightSize.estimatedSavings >= graviton.estimatedSavings) {
+        graviton.estimatedSavings = 0;
+      } else {
+        rightSize.estimatedSavings = 0;
+      }
+    }
+
+    result.push(...uniqueByCategory);
+  }
+
+  // Add recs with no instanceId (shouldn't happen but be safe)
+  for (const rec of recs) {
+    if (!rec.instanceId) result.push(rec);
+  }
+
+  return result;
 }
 
 function parseResponse(response: Anthropic.Message): Recommendation[] {

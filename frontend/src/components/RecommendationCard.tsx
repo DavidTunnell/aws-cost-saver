@@ -15,6 +15,10 @@ const CATEGORY_LABELS: Record<string, string> = {
   "unused-eip": "Unused EIP",
   "orphan-ebs": "Orphan EBS",
   idle: "Idle Instance",
+  "ebs-optimize": "EBS Optimize",
+  "graviton-migrate": "Graviton Migration",
+  "schedule-stop": "Schedule Stop",
+  "snapshot-cleanup": "Snapshot Cleanup",
 };
 
 export default function RecommendationCard({
