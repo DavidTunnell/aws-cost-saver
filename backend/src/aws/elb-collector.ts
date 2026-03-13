@@ -49,6 +49,9 @@ export interface ELBMetrics {
   // Common
   healthyHostCountAvg: number | null;
   unhealthyHostCountAvg: number | null;
+  // Flag: true when CloudWatch returned data successfully, false on API failure.
+  // Used by analyzer to distinguish "no traffic" from "no data".
+  metricsCollected: boolean;
 }
 
 export interface ELBLoadBalancerData {
@@ -269,6 +272,7 @@ async function getALBMetrics(
     backendErrorsSum: null,
     healthyHostCountAvg: avg(healthyDp.map((d) => d.Average!).filter((v) => v != null)),
     unhealthyHostCountAvg: avg(unhealthyDp.map((d) => d.Average!).filter((v) => v != null)),
+    metricsCollected: true,
   };
 }
 
@@ -317,6 +321,46 @@ async function getNLBMetrics(
     backendErrorsSum: null,
     healthyHostCountAvg: avg(healthyDp.map((d) => d.Average!).filter((v) => v != null)),
     unhealthyHostCountAvg: avg(unhealthyDp.map((d) => d.Average!).filter((v) => v != null)),
+    metricsCollected: true,
+  };
+}
+
+async function getGWLBMetrics(
+  client: CloudWatchClient,
+  arn: string,
+  days: number = 14
+): Promise<ELBMetrics> {
+  const endTime = new Date();
+  const startTime = new Date(endTime.getTime() - days * 24 * 60 * 60 * 1000);
+  const period = 3600;
+  const dimensionValue = getCloudWatchDimensionFromArn(arn);
+
+  // GWLB only publishes ProcessedBytes, HealthyHostCount, UnHealthyHostCount reliably.
+  // It does NOT publish ActiveFlowCount or NewFlowCount like NLB does.
+  const [processedBytesDp, healthyDp, unhealthyDp] = await Promise.all([
+    getMetric(client, "LoadBalancer", dimensionValue, "ProcessedBytes", ["Sum"], startTime, endTime, period, "AWS/GatewayELB"),
+    getMetric(client, "LoadBalancer", dimensionValue, "HealthyHostCount", ["Average"], startTime, endTime, period, "AWS/GatewayELB"),
+    getMetric(client, "LoadBalancer", dimensionValue, "UnHealthyHostCount", ["Average"], startTime, endTime, period, "AWS/GatewayELB"),
+  ]);
+
+  const avg = (arr: number[]) =>
+    arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+  const sum = (arr: number[]) =>
+    arr.length ? arr.reduce((a, b) => a + b, 0) : null;
+
+  return {
+    requestCountSum: null,
+    activeConnectionsAvg: null,
+    activeConnectionsMax: null,
+    processedBytesSum: sum(processedBytesDp.map((d) => d.Sum!).filter((v) => v != null)),
+    consumedLCUsAvg: null,
+    activeFlowCountAvg: null,
+    activeFlowCountMax: null,
+    newFlowCountSum: null,
+    backendErrorsSum: null,
+    healthyHostCountAvg: avg(healthyDp.map((d) => d.Average!).filter((v) => v != null)),
+    unhealthyHostCountAvg: avg(unhealthyDp.map((d) => d.Average!).filter((v) => v != null)),
+    metricsCollected: true,
   };
 }
 
@@ -354,6 +398,7 @@ async function getCLBMetrics(
     backendErrorsSum: sum(errorsDp.map((d) => d.Sum!).filter((v) => v != null)),
     healthyHostCountAvg: avg(healthyDp.map((d) => d.Average!).filter((v) => v != null)),
     unhealthyHostCountAvg: avg(unhealthyDp.map((d) => d.Average!).filter((v) => v != null)),
+    metricsCollected: true,
   };
 }
 
@@ -545,8 +590,8 @@ export async function collectELBData(
       } else if (lb.type === "network") {
         metrics = await getNLBMetrics(cwClient, lb.arn);
       } else {
-        // GWLB — minimal metrics, just use NLB pattern
-        metrics = await getNLBMetrics(cwClient, lb.arn);
+        // GWLB — dedicated metrics (ProcessedBytes + HealthyHostCount only)
+        metrics = await getGWLBMetrics(cwClient, lb.arn);
       }
     } catch (err: any) {
       console.warn(
@@ -700,6 +745,7 @@ function emptyMetrics(): ELBMetrics {
     backendErrorsSum: null,
     healthyHostCountAvg: null,
     unhealthyHostCountAvg: null,
+    metricsCollected: false,
   };
 }
 

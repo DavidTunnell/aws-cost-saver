@@ -52,14 +52,9 @@ function generateELBDeterministicRecs(
 
     // ─── Rule 1: elb-idle — zero traffic AND zero healthy targets ─────────
     {
-      // Guard: require at least some metrics to be present
-      const hasMetrics =
-        m.requestCountSum !== null ||
-        m.activeFlowCountAvg !== null ||
-        m.newFlowCountSum !== null ||
-        m.healthyHostCountAvg !== null;
-
-      if (hasMetrics) {
+      // Guard: only flag idle if CloudWatch actually returned data.
+      // metricsCollected=false means API failure — can't distinguish from zero traffic.
+      if (m.metricsCollected) {
         let trafficIsZero = false;
 
         if (lb.type === "alb" || lb.type === "clb") {
@@ -72,10 +67,10 @@ function generateELBDeterministicRecs(
             (m.newFlowCountSum === null || m.newFlowCountSum === 0) &&
             (m.healthyHostCountAvg === null || m.healthyHostCountAvg === 0);
         } else {
-          // GWLB — use NLB-like check
+          // GWLB — use ProcessedBytes (GWLB doesn't publish flow counts like NLB)
           trafficIsZero =
-            (m.activeFlowCountAvg === null || m.activeFlowCountAvg === 0) &&
-            (m.newFlowCountSum === null || m.newFlowCountSum === 0);
+            (m.processedBytesSum === null || m.processedBytesSum === 0) &&
+            (m.healthyHostCountAvg === null || m.healthyHostCountAvg === 0);
         }
 
         if (trafficIsZero) {
@@ -130,8 +125,8 @@ function generateELBDeterministicRecs(
       }
 
       if (isLowTraffic) {
-        // Fixed cost dominates at low traffic — could consolidate or remove
-        const savings = lb.currentMonthlyCost * 0.9; // conservative 90%
+        // Fixed cost dominates at low traffic — full cost recoverable if removed
+        const savings = lb.currentMonthlyCost;
         if (savings > 1) {
           recs.push({
             instanceId: lb.id,
@@ -346,12 +341,27 @@ function deduplicateELBRecommendations(
     }
 
     if (hasNoTargets) {
-      // No targets = likely should be deleted. Suppress low-traffic and LLM recs.
+      // No targets = should be deleted. Only keep the no-targets rec.
+      // Suppress classic-migrate (pointless to migrate a broken LB),
+      // single-az, and all LLM recs.
+      for (const rec of uniqueByCategory) {
+        if (rec.category === "elb-no-targets") {
+          result.push(rec);
+        }
+      }
+      continue;
+    }
+
+    // Low-traffic: suppress LLM architecture/scheduling recs (consolidation is kept
+    // since it's the primary action for low-traffic LBs)
+    const hasLowTraffic = uniqueByCategory.some(
+      (r) => r.category === "elb-low-traffic"
+    );
+    if (hasLowTraffic) {
       for (const rec of uniqueByCategory) {
         if (
-          rec.category === "elb-no-targets" ||
-          rec.category === "elb-classic-migrate" ||
-          rec.category === "elb-single-az"
+          rec.category !== "elb-architecture" &&
+          rec.category !== "elb-scheduling"
         ) {
           result.push(rec);
         }
@@ -367,7 +377,9 @@ function deduplicateELBRecommendations(
     if (!rec.instanceId) result.push(rec);
   }
 
-  // Cumulative savings cap per resource
+  // Cumulative savings cap per resource: if total savings > cost, scale all recs
+  // proportionally so sum = cost. This works because each rec gets multiplied by
+  // (cost / totalSavings), and sum of (savings_i * cost/total) = cost.
   const resourceSavings = new Map<string, number>();
   for (const rec of result) {
     if (!rec.instanceId) continue;
@@ -455,7 +467,7 @@ function buildELBPrompt(data: ELBAccountData): string {
         prompt += ` | Requests: ${lb.metrics.requestCountSum.toLocaleString()} in 14d`;
       }
     }
-    if (lb.type === "nlb" || lb.type === "gwlb") {
+    if (lb.type === "nlb") {
       if (lb.metrics.newFlowCountSum != null) {
         prompt += ` | NewFlows: ${lb.metrics.newFlowCountSum.toLocaleString()} in 14d`;
       }

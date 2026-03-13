@@ -132,10 +132,17 @@ export async function describeTargetHealth(
   client: ElasticLoadBalancingV2Client,
   targetGroupArn: string
 ): Promise<TargetHealthDescription[]> {
-  const resp = await client.send(
-    new DescribeTargetHealthCommand({ TargetGroupArn: targetGroupArn })
-  );
-  return resp.TargetHealthDescriptions || [];
+  try {
+    const resp = await client.send(
+      new DescribeTargetHealthCommand({ TargetGroupArn: targetGroupArn })
+    );
+    return resp.TargetHealthDescriptions || [];
+  } catch (err: any) {
+    console.warn(
+      `Failed to get target health for ${targetGroupArn}: ${err.message}`
+    );
+    return [];
+  }
 }
 
 /**
