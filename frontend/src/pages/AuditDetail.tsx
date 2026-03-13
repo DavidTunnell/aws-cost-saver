@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { getAudit, type AuditDetail as AuditDetailType, type Recommendation } from "../api";
 import RecommendationCard from "../components/RecommendationCard";
+import { getAuditUI, getAllCategoryLabels } from "../audit-registry";
+import "../audit-types";
 
 const SEVERITY_COLORS: Record<string, string> = {
   high: "#dc2626",
@@ -9,57 +11,9 @@ const SEVERITY_COLORS: Record<string, string> = {
   low: "#16a34a",
 };
 
-const CATEGORY_LABELS: Record<string, string> = {
-  // EC2 categories
-  "right-size": "Right-Size",
-  stop: "Stop/Terminate",
-  "generation-upgrade": "Upgrade Generation",
-  "reserved-instance": "Reserved Instance",
-  "savings-plan": "Savings Plan",
-  "unused-eip": "Unused EIP",
-  "orphan-ebs": "Orphan EBS",
-  idle: "Idle Instance",
-  "ebs-optimize": "EBS Optimize",
-  "graviton-migrate": "Graviton Migration",
-  "schedule-stop": "Schedule Stop",
-  "snapshot-cleanup": "Snapshot Cleanup",
-  // RDS categories
-  "rds-idle": "Idle Database",
-  "rds-snapshot-cleanup": "RDS Snapshot Cleanup",
-  "rds-old-generation": "RDS Generation Upgrade",
-  "rds-gp2-to-gp3": "GP2 → GP3 Storage",
-  "rds-multi-az-dev": "Multi-AZ Non-Prod",
-  "rds-stopped-cost": "Stopped Database",
-  "rds-overprovisioned-storage": "Overprovisioned Storage",
-  "rds-backup-retention": "Backup Retention",
-  "rds-right-size": "RDS Right-Size",
-  "rds-reserved-instance": "RDS Reserved Instance",
-  "rds-aurora-migration": "Aurora Migration",
-  "rds-extended-support": "Extended Support Surcharge",
-  "rds-iops-overprovisioned": "IOPS Overprovisioned",
-  "rds-cluster-snapshot-cleanup": "Cluster Snapshot Cleanup",
-  "rds-read-replica-underused": "Underused Read Replica",
-  "rds-serverless-migration": "Serverless Migration",
-  // S3 categories
-  "s3-no-lifecycle": "No Lifecycle Policy",
-  "s3-all-standard": "All Standard Storage",
-  "s3-incomplete-multipart": "Incomplete Multipart Uploads",
-  "s3-versioning-no-lifecycle": "Versioning Without Lifecycle",
-  "s3-glacier-candidate": "Glacier Candidate",
-  "s3-no-intelligent-tiering": "No Intelligent-Tiering",
-  "s3-access-pattern-optimize": "Access Pattern Optimization",
-  "s3-consolidation": "Bucket Consolidation",
-  // NAT Gateway categories
-  "nat-idle": "Idle NAT Gateway",
-  "nat-low-utilization": "Low Utilization",
-  "nat-no-vpc-endpoint": "Missing VPC Endpoint",
-  "nat-redundant-az": "Redundant Gateways",
-  "nat-high-error-rate": "High Error Rate",
-  "nat-architecture-optimize": "Architecture Optimization",
-  "nat-traffic-pattern": "Traffic Pattern",
-};
-
 function buildPdfHtml(audit: AuditDetailType) {
+  const ui = getAuditUI(audit.audit_type);
+  const catLabels = getAllCategoryLabels();
   const categoryCounts = audit.recommendations.reduce((acc, r) => {
     acc[r.category] = (acc[r.category] || 0) + 1;
     return acc;
@@ -79,7 +33,7 @@ function buildPdfHtml(audit: AuditDetailType) {
           </td>
           <td style="padding:8px;border-bottom:1px solid #e5e7eb;vertical-align:top;">
             <span style="color:${sColor};font-weight:600;text-transform:uppercase;font-size:11px;">${rec.severity}</span><br/>
-            <span style="font-size:12px;color:#2563eb;">${CATEGORY_LABELS[rec.category] || rec.category}</span>
+            <span style="font-size:12px;color:#2563eb;">${catLabels[rec.category] || rec.category}</span>
             ${rec.instance_type ? `<br/><span style="font-size:11px;color:#6b7280;">${rec.instance_type}</span>` : ""}
           </td>
           <td style="padding:8px;border-bottom:1px solid #e5e7eb;font-size:13px;vertical-align:top;">
@@ -95,8 +49,10 @@ function buildPdfHtml(audit: AuditDetailType) {
     .join("");
 
   const summaryItems = Object.entries(categoryCounts)
-    .map(([cat, count]) => `${CATEGORY_LABELS[cat] || cat}: ${count}`)
+    .map(([cat, count]) => `${catLabels[cat] || cat}: ${count}`)
     .join(" &nbsp;|&nbsp; ");
+
+  const resourceNoun = ui ? ui.resourceNoun.charAt(0).toUpperCase() + ui.resourceNoun.slice(1) : "Resources";
 
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"/>
@@ -113,12 +69,12 @@ function buildPdfHtml(audit: AuditDetailType) {
   @media print { body { margin: 20px; } }
 </style>
 </head><body>
-<h1>AWS ${audit.audit_type === "rds" ? "RDS" : audit.audit_type === "s3" ? "S3" : audit.audit_type === "nat" ? "NAT Gateway" : "EC2"} Cost Savings Report</h1>
+<h1>AWS ${ui?.label || audit.audit_type.toUpperCase()} Cost Savings Report</h1>
 <p class="meta">${audit.account_name} &mdash; Generated ${new Date().toLocaleDateString()}</p>
 <div class="summary">
   <div style="display:flex;justify-content:space-between;align-items:center;">
     <div>
-      <div style="font-size:13px;color:#6b7280;">${audit.audit_type === "rds" ? "Databases" : audit.audit_type === "s3" ? "Buckets" : audit.audit_type === "nat" ? "Gateways" : "Instances"} analyzed: <strong>${audit.instance_count}</strong> &nbsp;|&nbsp; Findings: <strong>${audit.recommendations.length}</strong></div>
+      <div style="font-size:13px;color:#6b7280;">${resourceNoun} analyzed: <strong>${audit.instance_count}</strong> &nbsp;|&nbsp; Findings: <strong>${audit.recommendations.length}</strong></div>
       <div style="font-size:12px;color:#6b7280;margin-top:4px;">${summaryItems}</div>
     </div>
     <div style="text-align:right;">
@@ -216,15 +172,9 @@ export default function AuditDetail() {
             <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
               {audit.account_name}
               <span className={`text-xs font-medium px-2 py-0.5 rounded border ${
-                audit.audit_type === "rds"
-                  ? "bg-purple-50 text-purple-700 border-purple-200"
-                  : audit.audit_type === "s3"
-                  ? "bg-blue-50 text-blue-700 border-blue-200"
-                  : audit.audit_type === "nat"
-                  ? "bg-orange-50 text-orange-700 border-orange-200"
-                  : "bg-green-50 text-green-700 border-green-200"
+                getAuditUI(audit.audit_type)?.badgeStyle || "bg-gray-50 text-gray-700 border-gray-200"
               }`}>
-                {audit.audit_type === "nat" ? "NAT" : (audit.audit_type || "ec2").toUpperCase()}
+                {getAuditUI(audit.audit_type)?.label || audit.audit_type.toUpperCase()}
               </span>
             </h2>
             <p className="text-sm text-gray-500 mt-1">
@@ -259,7 +209,7 @@ export default function AuditDetail() {
         {audit.status === "completed" && (
           <div className="flex gap-4 mt-4 pt-4 border-t border-gray-100">
             <div className="text-sm">
-              <span className="text-gray-500">{audit.audit_type === "rds" ? "Databases" : audit.audit_type === "s3" ? "Buckets" : audit.audit_type === "nat" ? "Gateways" : "Instances"} analyzed: </span>
+              <span className="text-gray-500">{(getAuditUI(audit.audit_type)?.resourceNoun || "resources").charAt(0).toUpperCase() + (getAuditUI(audit.audit_type)?.resourceNoun || "resources").slice(1)} analyzed: </span>
               <span className="font-medium">{audit.instance_count}</span>
             </div>
             <div className="text-sm">
@@ -270,7 +220,7 @@ export default function AuditDetail() {
             </div>
             {Object.entries(categoryCounts).map(([cat, count]) => (
               <div key={cat} className="text-sm">
-                <span className="text-gray-500">{CATEGORY_LABELS[cat] || cat}: </span>
+                <span className="text-gray-500">{getAllCategoryLabels()[cat] || cat}: </span>
                 <span className="font-medium">{count}</span>
               </div>
             ))}
@@ -301,7 +251,7 @@ export default function AuditDetail() {
         <div className="text-center py-12 text-gray-500">
           <p className="text-lg mb-2">No cost savings found</p>
           <p className="text-sm">
-            Your {audit.audit_type === "rds" ? "RDS databases" : audit.audit_type === "s3" ? "S3 buckets" : audit.audit_type === "nat" ? "NAT Gateways" : "EC2 resources"} appear to be well-optimized.
+            Your {getAuditUI(audit.audit_type)?.label || audit.audit_type.toUpperCase()} {getAuditUI(audit.audit_type)?.resourceNoun || "resources"} appear to be well-optimized.
           </p>
         </div>
       )}

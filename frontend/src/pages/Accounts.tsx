@@ -9,6 +9,8 @@ import {
   type Account,
 } from "../api";
 import AccountForm from "../components/AccountForm";
+import { getAllAuditUIs } from "../audit-registry";
+import "../audit-types";
 
 export default function Accounts() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -152,30 +154,15 @@ export default function Accounts() {
                 >
                   {testing === acc.id ? "Testing..." : "Test Connection"}
                 </button>
-                <button
-                  onClick={() => handleAudit(acc.id, 'ec2')}
-                  className="bg-green-600 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-green-700"
-                >
-                  EC2 Audit
-                </button>
-                <button
-                  onClick={() => handleAudit(acc.id, 'rds')}
-                  className="bg-purple-600 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-purple-700"
-                >
-                  RDS Audit
-                </button>
-                <button
-                  onClick={() => handleAudit(acc.id, 's3')}
-                  className="bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-blue-700"
-                >
-                  S3 Audit
-                </button>
-                <button
-                  onClick={() => handleAudit(acc.id, 'nat')}
-                  className="bg-orange-600 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-orange-700"
-                >
-                  NAT Audit
-                </button>
+                {getAllAuditUIs().map((auditUI) => (
+                  <button
+                    key={auditUI.key}
+                    onClick={() => handleAudit(acc.id, auditUI.key)}
+                    className={`${auditUI.buttonColor} text-white px-3 py-1.5 rounded text-xs font-medium`}
+                  >
+                    {auditUI.label} Audit
+                  </button>
+                ))}
                 <button
                   onClick={() => handleDelete(acc.id)}
                   className="border border-red-200 text-red-600 px-3 py-1.5 rounded text-xs font-medium hover:bg-red-50"

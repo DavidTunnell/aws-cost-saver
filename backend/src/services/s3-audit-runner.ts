@@ -2,6 +2,14 @@ import db from "../db";
 import { decrypt } from "../crypto";
 import { collectS3AccountData } from "../aws/s3-collector";
 import { analyzeS3WithClaude } from "./s3-analyzer";
+import { registerAuditType } from "../audit-registry";
+
+registerAuditType({
+  key: "s3",
+  label: "S3",
+  resourceNoun: "buckets",
+  runner: runS3Audit,
+});
 
 export async function runS3Audit(accountId: number, auditId: number) {
   try {

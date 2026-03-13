@@ -1,9 +1,13 @@
 import { Router, Request, Response } from "express";
 import db from "../db";
-import { runAudit } from "../services/audit-runner";
-import { runRDSAudit } from "../services/rds-audit-runner";
-import { runS3Audit } from "../services/s3-audit-runner";
-import { runNatAudit } from "../services/nat-audit-runner";
+import { getAuditType, getRegisteredTypes } from "../audit-registry";
+
+// Import audit runners to trigger their self-registration
+import "../services/audit-runner";
+import "../services/rds-audit-runner";
+import "../services/s3-audit-runner";
+import "../services/nat-audit-runner";
+import "../services/lambda-audit-runner";
 
 const router = Router();
 
@@ -49,8 +53,10 @@ router.post("/", async (req: Request, res: Response) => {
     return res.status(400).json({ error: "account_id is required" });
   }
 
-  if (!["ec2", "rds", "s3", "nat"].includes(audit_type)) {
-    return res.status(400).json({ error: "audit_type must be 'ec2', 'rds', 's3', or 'nat'" });
+  const auditConfig = getAuditType(audit_type);
+  if (!auditConfig) {
+    const validTypes = getRegisteredTypes().join("', '");
+    return res.status(400).json({ error: `audit_type must be one of: '${validTypes}'` });
   }
 
   const account = db
@@ -69,7 +75,7 @@ router.post("/", async (req: Request, res: Response) => {
   if (running) {
     return res
       .status(409)
-      .json({ error: `A ${audit_type.toUpperCase()} audit is already running for this account` });
+      .json({ error: `A ${auditConfig.label} audit is already running for this account` });
   }
 
   const result = db
@@ -78,23 +84,9 @@ router.post("/", async (req: Request, res: Response) => {
   const auditId = result.lastInsertRowid as number;
 
   // Run audit in background (don't await)
-  if (audit_type === "s3") {
-    runS3Audit(account_id, auditId).catch((err) => {
-      console.error(`Background S3 audit failed:`, err);
-    });
-  } else if (audit_type === "rds") {
-    runRDSAudit(account_id, auditId).catch((err) => {
-      console.error(`Background RDS audit failed:`, err);
-    });
-  } else if (audit_type === "nat") {
-    runNatAudit(account_id, auditId).catch((err) => {
-      console.error(`Background NAT audit failed:`, err);
-    });
-  } else {
-    runAudit(account_id, auditId).catch((err) => {
-      console.error(`Background audit failed:`, err);
-    });
-  }
+  auditConfig.runner(account_id, auditId).catch((err) => {
+    console.error(`Background ${auditConfig.label} audit failed:`, err);
+  });
 
   res.status(201).json({ id: auditId, status: "running" });
 });

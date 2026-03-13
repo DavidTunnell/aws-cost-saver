@@ -55,7 +55,13 @@ Create an IAM user with this policy (all read-only):
         "ce:GetCostAndUsage",
         "ce:GetSavingsPlansCoverage",
         "pricing:GetProducts",
-        "sts:GetCallerIdentity"
+        "sts:GetCallerIdentity",
+        "lambda:ListFunctions",
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:ListVersionsByFunction",
+        "lambda:ListAliases",
+        "lambda:ListProvisionedConcurrencyConfigs"
       ],
       "Resource": "*"
     }

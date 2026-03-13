@@ -1,17 +1,17 @@
 import db from "../db";
 import { decrypt } from "../crypto";
-import { collectNatGatewayData } from "../aws/nat-collector";
-import { analyzeNatWithClaude } from "./nat-analyzer";
+import { collectLambdaData } from "../aws/lambda-collector";
+import { analyzeLambdaWithClaude } from "./lambda-analyzer";
 import { registerAuditType } from "../audit-registry";
 
 registerAuditType({
-  key: "nat",
-  label: "NAT Gateway",
-  resourceNoun: "gateways",
-  runner: runNatAudit,
+  key: "lambda",
+  label: "Lambda",
+  resourceNoun: "functions",
+  runner: runLambdaAudit,
 });
 
-export async function runNatAudit(accountId: number, auditId: number) {
+export async function runLambdaAudit(accountId: number, auditId: number) {
   try {
     const account = db
       .prepare(`SELECT * FROM aws_accounts WHERE id = ?`)
@@ -26,20 +26,20 @@ export async function runNatAudit(accountId: number, auditId: number) {
       secretAccessKey: decrypt(account.secret_access_key_enc),
     };
 
-    // Collect NAT Gateway data
-    const data = await collectNatGatewayData(
+    // Collect Lambda data
+    const data = await collectLambdaData(
       credentials,
       account.default_region,
       account.name,
       account.aws_account_id || "unknown",
-      (msg) => console.log(`[NAT Audit ${auditId}] ${msg}`)
+      (msg) => console.log(`[Lambda Audit ${auditId}] ${msg}`)
     );
 
     // Analyze with deterministic rules + Claude
-    console.log(`[NAT Audit ${auditId}] Analyzing...`);
-    const recommendations = await analyzeNatWithClaude(data);
+    console.log(`[Lambda Audit ${auditId}] Analyzing...`);
+    const recommendations = await analyzeLambdaWithClaude(data);
     console.log(
-      `[NAT Audit ${auditId}] Got ${recommendations.length} recommendations`
+      `[Lambda Audit ${auditId}] Got ${recommendations.length} recommendations`
     );
 
     // Write recommendations to DB
@@ -78,13 +78,13 @@ export async function runNatAudit(accountId: number, auditId: number) {
            instance_count = ?,
            completed_at = datetime('now')
        WHERE id = ?`
-    ).run(totalSavings, data.gateways.length, auditId);
+    ).run(totalSavings, data.functions.length, auditId);
 
     console.log(
-      `[NAT Audit ${auditId}] Completed. Total potential savings: $${totalSavings.toFixed(2)}/mo`
+      `[Lambda Audit ${auditId}] Completed. Total potential savings: $${totalSavings.toFixed(2)}/mo`
     );
   } catch (err: any) {
-    console.error(`[NAT Audit ${auditId}] Failed:`, err.message);
+    console.error(`[Lambda Audit ${auditId}] Failed:`, err.message);
     db.prepare(
       `UPDATE audits SET status = 'failed', error = ?, completed_at = datetime('now') WHERE id = ?`
     ).run(err.message, auditId);
