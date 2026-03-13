@@ -18,7 +18,7 @@ import {
 } from "./ec2";
 import { getInstanceMetrics, getVolumeMetrics, type InstanceMetrics, type VolumeMetrics } from "./cloudwatch";
 import { getOnDemandPrice, clearPriceCache, getEbsMonthlyPrice, getSnapshotMonthlyPrice, getGravitonEquivalent } from "./pricing";
-import { getEC2CostsByType } from "./cost-explorer";
+import { getEC2CostsByType, getSnapshotCosts, type SnapshotCostData } from "./cost-explorer";
 
 export interface AttachedVolume {
   volumeId: string;
@@ -74,6 +74,8 @@ export interface EnrichedSnapshot extends SnapshotInfo {
   sourceVolumeExists: boolean;
   usedByAmi: string | null;
   monthlyCost: number;
+  /** True if monthlyCost is from Cost Explorer actual data; false if estimated from provisioned size. */
+  costIsActual: boolean;
 }
 
 export interface AccountSummary {
@@ -94,6 +96,8 @@ export interface CollectedData {
   amis: AmiInfo[];
   accountSummary: AccountSummary;
   collectedAt: string;
+  /** Actual snapshot cost data from Cost Explorer. Null if CE query failed. */
+  snapshotCostData: SnapshotCostData | null;
 }
 
 export async function collectAccountData(
@@ -193,6 +197,14 @@ export async function collectAccountData(
   const { costByType, totalEC2Cost } = await getEC2CostsByType(costExplorer);
   if (totalEC2Cost > 0) {
     log(`Total EC2 spend (last 30d): $${totalEC2Cost.toFixed(2)}`);
+  }
+
+  log("Fetching actual snapshot costs from Cost Explorer...");
+  const snapshotCostData = await getSnapshotCosts(costExplorer);
+  if (snapshotCostData) {
+    log(`Snapshot costs: $${snapshotCostData.totalSnapshotCost.toFixed(2)}/mo (${snapshotCostData.totalGbMonths.toFixed(1)} GB-Mo)${snapshotCostData.hasResourceData ? ", per-resource data available" : ", aggregate only"}`);
+  } else {
+    log("Could not fetch snapshot costs from Cost Explorer; will use provisioned-size estimates");
   }
 
   const runningInstances = instances.filter((i) => i.state === "running");
@@ -355,12 +367,38 @@ export async function collectAccountData(
     existingVolumeIds.add(vol.volumeId);
   }
 
-  const snapshots: EnrichedSnapshot[] = rawSnapshots.map((snap) => ({
-    ...snap,
-    sourceVolumeExists: !!snap.volumeId && existingVolumeIds.has(snap.volumeId),
-    usedByAmi: snapshotToAmi.get(snap.snapshotId) ?? null,
-    monthlyCost: getSnapshotMonthlyPrice(snap.volumeSizeGb),
-  }));
+  // Compute per-snapshot costs using Cost Explorer data when available
+  const totalProvisionedGb = rawSnapshots.reduce((sum, s) => sum + s.volumeSizeGb, 0);
+  // Effective $/GB/mo rate from Cost Explorer (used for proportional distribution when per-resource data isn't available)
+  const effectiveSnapshotRate = (snapshotCostData && totalProvisionedGb > 0)
+    ? snapshotCostData.totalSnapshotCost / totalProvisionedGb
+    : null;
+
+  const snapshots: EnrichedSnapshot[] = rawSnapshots.map((snap) => {
+    let monthlyCost: number;
+    let costIsActual = false;
+
+    if (snapshotCostData?.hasResourceData && snapshotCostData.costBySnapshot.has(snap.snapshotId)) {
+      // Best case: per-resource actual cost from Cost Explorer
+      monthlyCost = snapshotCostData.costBySnapshot.get(snap.snapshotId)!;
+      costIsActual = true;
+    } else if (effectiveSnapshotRate !== null) {
+      // Fallback: distribute aggregate Cost Explorer total proportionally by provisioned size
+      monthlyCost = effectiveSnapshotRate * snap.volumeSizeGb;
+      costIsActual = true; // Still based on actual CE data, just distributed proportionally
+    } else {
+      // Last resort: provisioned size × $0.05/GB/mo (upper bound estimate)
+      monthlyCost = getSnapshotMonthlyPrice(snap.volumeSizeGb);
+    }
+
+    return {
+      ...snap,
+      sourceVolumeExists: !!snap.volumeId && existingVolumeIds.has(snap.volumeId),
+      usedByAmi: snapshotToAmi.get(snap.snapshotId) ?? null,
+      monthlyCost,
+      costIsActual,
+    };
+  });
 
   const accountSummary: AccountSummary = {
     totalInstances: instanceDataList.length,
@@ -380,5 +418,6 @@ export async function collectAccountData(
     amis,
     accountSummary,
     collectedAt: new Date().toISOString(),
+    snapshotCostData,
   };
 }

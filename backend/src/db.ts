@@ -49,4 +49,12 @@ db.exec(`
   );
 `);
 
+// Migration: add audit_type column for multi-service support
+try {
+  db.exec(`ALTER TABLE audits ADD COLUMN audit_type TEXT NOT NULL DEFAULT 'ec2'`);
+} catch (e: any) {
+  // Column already exists — ignore
+  if (!e.message.includes('duplicate column')) throw e;
+}
+
 export default db;

@@ -52,6 +52,7 @@ export interface Audit {
   account_id: number;
   account_name: string;
   status: string;
+  audit_type: string;
   total_savings_monthly: number;
   instance_count: number;
   started_at: string;
@@ -81,8 +82,8 @@ export const getAudits = () => request<Audit[]>("/audits");
 
 export const getAudit = (id: number) => request<AuditDetail>(`/audits/${id}`);
 
-export const startAudit = (accountId: number) =>
+export const startAudit = (accountId: number, auditType: string = 'ec2') =>
   request<{ id: number; status: string }>("/audits", {
     method: "POST",
-    body: JSON.stringify({ account_id: accountId }),
+    body: JSON.stringify({ account_id: accountId, audit_type: auditType }),
   });

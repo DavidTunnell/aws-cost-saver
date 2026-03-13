@@ -10,6 +10,7 @@ const SEVERITY_COLORS: Record<string, string> = {
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
+  // EC2 categories
   "right-size": "Right-Size",
   stop: "Stop/Terminate",
   "generation-upgrade": "Upgrade Generation",
@@ -22,6 +23,32 @@ const CATEGORY_LABELS: Record<string, string> = {
   "graviton-migrate": "Graviton Migration",
   "schedule-stop": "Schedule Stop",
   "snapshot-cleanup": "Snapshot Cleanup",
+  // RDS categories
+  "rds-idle": "Idle Database",
+  "rds-snapshot-cleanup": "RDS Snapshot Cleanup",
+  "rds-old-generation": "RDS Generation Upgrade",
+  "rds-gp2-to-gp3": "GP2 → GP3 Storage",
+  "rds-multi-az-dev": "Multi-AZ Non-Prod",
+  "rds-stopped-cost": "Stopped Database",
+  "rds-overprovisioned-storage": "Overprovisioned Storage",
+  "rds-backup-retention": "Backup Retention",
+  "rds-right-size": "RDS Right-Size",
+  "rds-reserved-instance": "RDS Reserved Instance",
+  "rds-aurora-migration": "Aurora Migration",
+  "rds-extended-support": "Extended Support Surcharge",
+  "rds-iops-overprovisioned": "IOPS Overprovisioned",
+  "rds-cluster-snapshot-cleanup": "Cluster Snapshot Cleanup",
+  "rds-read-replica-underused": "Underused Read Replica",
+  "rds-serverless-migration": "Serverless Migration",
+  // S3 categories
+  "s3-no-lifecycle": "No Lifecycle Policy",
+  "s3-all-standard": "All Standard Storage",
+  "s3-incomplete-multipart": "Incomplete Multipart Uploads",
+  "s3-versioning-no-lifecycle": "Versioning Without Lifecycle",
+  "s3-glacier-candidate": "Glacier Candidate",
+  "s3-no-intelligent-tiering": "No Intelligent-Tiering",
+  "s3-access-pattern-optimize": "Access Pattern Optimization",
+  "s3-consolidation": "Bucket Consolidation",
 };
 
 function buildPdfHtml(audit: AuditDetailType) {
@@ -78,12 +105,12 @@ function buildPdfHtml(audit: AuditDetailType) {
   @media print { body { margin: 20px; } }
 </style>
 </head><body>
-<h1>AWS Cost Savings Report</h1>
+<h1>AWS ${audit.audit_type === "rds" ? "RDS" : audit.audit_type === "s3" ? "S3" : "EC2"} Cost Savings Report</h1>
 <p class="meta">${audit.account_name} &mdash; Generated ${new Date().toLocaleDateString()}</p>
 <div class="summary">
   <div style="display:flex;justify-content:space-between;align-items:center;">
     <div>
-      <div style="font-size:13px;color:#6b7280;">Instances analyzed: <strong>${audit.instance_count}</strong> &nbsp;|&nbsp; Findings: <strong>${audit.recommendations.length}</strong></div>
+      <div style="font-size:13px;color:#6b7280;">${audit.audit_type === "rds" ? "Databases" : audit.audit_type === "s3" ? "Buckets" : "Instances"} analyzed: <strong>${audit.instance_count}</strong> &nbsp;|&nbsp; Findings: <strong>${audit.recommendations.length}</strong></div>
       <div style="font-size:12px;color:#6b7280;margin-top:4px;">${summaryItems}</div>
     </div>
     <div style="text-align:right;">
@@ -178,8 +205,17 @@ export default function AuditDetail() {
       <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-gray-800">
+            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
               {audit.account_name}
+              <span className={`text-xs font-medium px-2 py-0.5 rounded border ${
+                audit.audit_type === "rds"
+                  ? "bg-purple-50 text-purple-700 border-purple-200"
+                  : audit.audit_type === "s3"
+                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                  : "bg-green-50 text-green-700 border-green-200"
+              }`}>
+                {(audit.audit_type || "ec2").toUpperCase()}
+              </span>
             </h2>
             <p className="text-sm text-gray-500 mt-1">
               Started {new Date(audit.started_at).toLocaleString()}
@@ -213,7 +249,7 @@ export default function AuditDetail() {
         {audit.status === "completed" && (
           <div className="flex gap-4 mt-4 pt-4 border-t border-gray-100">
             <div className="text-sm">
-              <span className="text-gray-500">Instances analyzed: </span>
+              <span className="text-gray-500">{audit.audit_type === "rds" ? "Databases" : audit.audit_type === "s3" ? "Buckets" : "Instances"} analyzed: </span>
               <span className="font-medium">{audit.instance_count}</span>
             </div>
             <div className="text-sm">
@@ -255,7 +291,7 @@ export default function AuditDetail() {
         <div className="text-center py-12 text-gray-500">
           <p className="text-lg mb-2">No cost savings found</p>
           <p className="text-sm">
-            Your EC2 resources appear to be well-optimized.
+            Your {audit.audit_type === "rds" ? "RDS databases" : audit.audit_type === "s3" ? "S3 buckets" : "EC2 resources"} appear to be well-optimized.
           </p>
         </div>
       )}

@@ -73,9 +73,9 @@ export default function Accounts() {
     }
   };
 
-  const handleAudit = async (accountId: number) => {
+  const handleAudit = async (accountId: number, auditType: string = 'ec2') => {
     try {
-      const result = await startAudit(accountId);
+      const result = await startAudit(accountId, auditType);
       navigate(`/audits/${result.id}`);
     } catch (e: any) {
       setError(e.message);
@@ -120,7 +120,7 @@ export default function Accounts() {
         <div className="text-center py-12 text-gray-500">
           <p className="text-lg mb-2">No AWS accounts configured</p>
           <p className="text-sm">
-            Add an account to start analyzing EC2 costs.
+            Add an account to start analyzing AWS costs.
           </p>
         </div>
       ) : (
@@ -153,10 +153,22 @@ export default function Accounts() {
                   {testing === acc.id ? "Testing..." : "Test Connection"}
                 </button>
                 <button
-                  onClick={() => handleAudit(acc.id)}
+                  onClick={() => handleAudit(acc.id, 'ec2')}
                   className="bg-green-600 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-green-700"
                 >
-                  Run Audit
+                  EC2 Audit
+                </button>
+                <button
+                  onClick={() => handleAudit(acc.id, 'rds')}
+                  className="bg-purple-600 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-purple-700"
+                >
+                  RDS Audit
+                </button>
+                <button
+                  onClick={() => handleAudit(acc.id, 's3')}
+                  className="bg-blue-600 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-blue-700"
+                >
+                  S3 Audit
                 </button>
                 <button
                   onClick={() => handleDelete(acc.id)}

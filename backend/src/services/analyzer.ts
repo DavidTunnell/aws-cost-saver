@@ -71,11 +71,33 @@ function generateDeterministicRecs(data: CollectedData): Recommendation[] {
   }
 
   // 3. unused-ami: AMIs not used by any instance
+  // Build a lookup from snapshot ID to actual cost (from enriched snapshots)
+  const snapCostMap = new Map<string, { cost: number; isActual: boolean }>();
+  for (const snap of data.snapshots) {
+    snapCostMap.set(snap.snapshotId, { cost: snap.monthlyCost, isActual: snap.costIsActual });
+  }
+
   if (data.amis) {
     for (const ami of data.amis) {
       if (usedAmiIds.has(ami.imageId)) continue;
-      const cost = getSnapshotMonthlyPrice(ami.totalSnapshotSizeGb);
+
+      // Sum actual costs of backing snapshots when available
+      let cost = 0;
+      let allActual = true;
+      for (const snapId of ami.snapshotIds) {
+        const snapCost = snapCostMap.get(snapId);
+        if (snapCost) {
+          cost += snapCost.cost;
+          if (!snapCost.isActual) allActual = false;
+        } else {
+          // Snapshot not in enriched list (e.g., <30 days old) — use provisioned estimate
+          cost += getSnapshotMonthlyPrice(ami.totalSnapshotSizeGb / Math.max(ami.snapshotIds.length, 1));
+          allActual = false;
+        }
+      }
+
       if (cost <= 0) continue;
+      const costWarning = allActual ? "" : " (estimate based on provisioned size; actual cost may be lower)";
       recs.push({
         instanceId: ami.imageId,
         instanceName: ami.name || ami.imageId,
@@ -85,7 +107,7 @@ function generateDeterministicRecs(data: CollectedData): Recommendation[] {
         currentMonthlyCost: cost,
         estimatedSavings: cost,
         action: `Deregister unused AMI ${ami.imageId} ("${ami.name}") and delete its ${ami.snapshotIds.length} backing snapshots`,
-        reasoning: `AMI not used by any instance. Backing snapshots (${ami.totalSnapshotSizeGb}GB) cost $${cost.toFixed(2)}/mo.`,
+        reasoning: `AMI not used by any instance. Backing snapshots (${ami.totalSnapshotSizeGb}GB provisioned) cost $${cost.toFixed(2)}/mo${costWarning}.`,
       });
       for (const snapId of ami.snapshotIds) {
         snapshotIdsFromUnusedAmis.add(snapId);
@@ -101,6 +123,7 @@ function generateDeterministicRecs(data: CollectedData): Recommendation[] {
     // This is an ORPHAN snapshot
     const cost = snap.monthlyCost;
     if (cost <= 0) continue;
+    const costWarning = snap.costIsActual ? "" : " (estimate based on provisioned size; actual cost may be lower)";
     recs.push({
       instanceId: snap.snapshotId,
       instanceName: snap.description || snap.snapshotId,
@@ -109,8 +132,8 @@ function generateDeterministicRecs(data: CollectedData): Recommendation[] {
       severity: getSeverity(cost),
       currentMonthlyCost: cost,
       estimatedSavings: cost,
-      action: `Delete orphan snapshot ${snap.snapshotId} (${snap.volumeSizeGb}GB)`,
-      reasoning: `Orphan snapshot — source volume ${snap.volumeId || "unknown"} no longer exists and snapshot is not backing any AMI. Created ${snap.startTime}.`,
+      action: `Delete orphan snapshot ${snap.snapshotId} (${snap.volumeSizeGb}GB provisioned)`,
+      reasoning: `Orphan snapshot — source volume ${snap.volumeId || "unknown"} no longer exists and snapshot is not backing any AMI. Created ${snap.startTime}. Cost: $${cost.toFixed(2)}/mo${costWarning}.`,
     });
   }
 

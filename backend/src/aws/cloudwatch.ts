@@ -18,7 +18,7 @@ export interface InstanceMetrics {
   ebsWriteBandwidth: number | null;
 }
 
-async function getMetric(
+export async function getMetric(
   client: CloudWatchClient,
   dimensionName: string,
   dimensionValue: string,
