@@ -171,6 +171,12 @@ export default function Accounts() {
                   S3 Audit
                 </button>
                 <button
+                  onClick={() => handleAudit(acc.id, 'nat')}
+                  className="bg-orange-600 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-orange-700"
+                >
+                  NAT Audit
+                </button>
+                <button
                   onClick={() => handleDelete(acc.id)}
                   className="border border-red-200 text-red-600 px-3 py-1.5 rounded text-xs font-medium hover:bg-red-50"
                 >

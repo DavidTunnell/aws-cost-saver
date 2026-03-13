@@ -3,6 +3,7 @@ import db from "../db";
 import { runAudit } from "../services/audit-runner";
 import { runRDSAudit } from "../services/rds-audit-runner";
 import { runS3Audit } from "../services/s3-audit-runner";
+import { runNatAudit } from "../services/nat-audit-runner";
 
 const router = Router();
 
@@ -48,8 +49,8 @@ router.post("/", async (req: Request, res: Response) => {
     return res.status(400).json({ error: "account_id is required" });
   }
 
-  if (!["ec2", "rds", "s3"].includes(audit_type)) {
-    return res.status(400).json({ error: "audit_type must be 'ec2', 'rds', or 's3'" });
+  if (!["ec2", "rds", "s3", "nat"].includes(audit_type)) {
+    return res.status(400).json({ error: "audit_type must be 'ec2', 'rds', 's3', or 'nat'" });
   }
 
   const account = db
@@ -84,6 +85,10 @@ router.post("/", async (req: Request, res: Response) => {
   } else if (audit_type === "rds") {
     runRDSAudit(account_id, auditId).catch((err) => {
       console.error(`Background RDS audit failed:`, err);
+    });
+  } else if (audit_type === "nat") {
+    runNatAudit(account_id, auditId).catch((err) => {
+      console.error(`Background NAT audit failed:`, err);
     });
   } else {
     runAudit(account_id, auditId).catch((err) => {

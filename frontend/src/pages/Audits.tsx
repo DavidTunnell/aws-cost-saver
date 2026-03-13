@@ -12,6 +12,7 @@ const AUDIT_TYPE_STYLES: Record<string, string> = {
   ec2: "bg-green-50 text-green-700 border-green-200",
   rds: "bg-purple-50 text-purple-700 border-purple-200",
   s3: "bg-blue-50 text-blue-700 border-blue-200",
+  nat: "bg-orange-50 text-orange-700 border-orange-200",
 };
 
 export default function Audits() {
@@ -75,7 +76,7 @@ export default function Audits() {
                   </div>
                   <div className="text-sm text-gray-500">
                     {new Date(audit.started_at).toLocaleString()} &middot;{" "}
-                    {audit.instance_count} {audit.audit_type === "rds" ? "databases" : audit.audit_type === "s3" ? "buckets" : "instances"}
+                    {audit.instance_count} {audit.audit_type === "rds" ? "databases" : audit.audit_type === "s3" ? "buckets" : audit.audit_type === "nat" ? "gateways" : "instances"}
                   </div>
                 </div>
                 <div className="flex items-center gap-4">

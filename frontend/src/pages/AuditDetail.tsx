@@ -49,6 +49,14 @@ const CATEGORY_LABELS: Record<string, string> = {
   "s3-no-intelligent-tiering": "No Intelligent-Tiering",
   "s3-access-pattern-optimize": "Access Pattern Optimization",
   "s3-consolidation": "Bucket Consolidation",
+  // NAT Gateway categories
+  "nat-idle": "Idle NAT Gateway",
+  "nat-low-utilization": "Low Utilization",
+  "nat-no-vpc-endpoint": "Missing VPC Endpoint",
+  "nat-redundant-az": "Redundant Gateways",
+  "nat-high-error-rate": "High Error Rate",
+  "nat-architecture-optimize": "Architecture Optimization",
+  "nat-traffic-pattern": "Traffic Pattern",
 };
 
 function buildPdfHtml(audit: AuditDetailType) {
@@ -105,12 +113,12 @@ function buildPdfHtml(audit: AuditDetailType) {
   @media print { body { margin: 20px; } }
 </style>
 </head><body>
-<h1>AWS ${audit.audit_type === "rds" ? "RDS" : audit.audit_type === "s3" ? "S3" : "EC2"} Cost Savings Report</h1>
+<h1>AWS ${audit.audit_type === "rds" ? "RDS" : audit.audit_type === "s3" ? "S3" : audit.audit_type === "nat" ? "NAT Gateway" : "EC2"} Cost Savings Report</h1>
 <p class="meta">${audit.account_name} &mdash; Generated ${new Date().toLocaleDateString()}</p>
 <div class="summary">
   <div style="display:flex;justify-content:space-between;align-items:center;">
     <div>
-      <div style="font-size:13px;color:#6b7280;">${audit.audit_type === "rds" ? "Databases" : audit.audit_type === "s3" ? "Buckets" : "Instances"} analyzed: <strong>${audit.instance_count}</strong> &nbsp;|&nbsp; Findings: <strong>${audit.recommendations.length}</strong></div>
+      <div style="font-size:13px;color:#6b7280;">${audit.audit_type === "rds" ? "Databases" : audit.audit_type === "s3" ? "Buckets" : audit.audit_type === "nat" ? "Gateways" : "Instances"} analyzed: <strong>${audit.instance_count}</strong> &nbsp;|&nbsp; Findings: <strong>${audit.recommendations.length}</strong></div>
       <div style="font-size:12px;color:#6b7280;margin-top:4px;">${summaryItems}</div>
     </div>
     <div style="text-align:right;">
@@ -212,9 +220,11 @@ export default function AuditDetail() {
                   ? "bg-purple-50 text-purple-700 border-purple-200"
                   : audit.audit_type === "s3"
                   ? "bg-blue-50 text-blue-700 border-blue-200"
+                  : audit.audit_type === "nat"
+                  ? "bg-orange-50 text-orange-700 border-orange-200"
                   : "bg-green-50 text-green-700 border-green-200"
               }`}>
-                {(audit.audit_type || "ec2").toUpperCase()}
+                {audit.audit_type === "nat" ? "NAT" : (audit.audit_type || "ec2").toUpperCase()}
               </span>
             </h2>
             <p className="text-sm text-gray-500 mt-1">
@@ -249,7 +259,7 @@ export default function AuditDetail() {
         {audit.status === "completed" && (
           <div className="flex gap-4 mt-4 pt-4 border-t border-gray-100">
             <div className="text-sm">
-              <span className="text-gray-500">{audit.audit_type === "rds" ? "Databases" : audit.audit_type === "s3" ? "Buckets" : "Instances"} analyzed: </span>
+              <span className="text-gray-500">{audit.audit_type === "rds" ? "Databases" : audit.audit_type === "s3" ? "Buckets" : audit.audit_type === "nat" ? "Gateways" : "Instances"} analyzed: </span>
               <span className="font-medium">{audit.instance_count}</span>
             </div>
             <div className="text-sm">
@@ -260,7 +270,7 @@ export default function AuditDetail() {
             </div>
             {Object.entries(categoryCounts).map(([cat, count]) => (
               <div key={cat} className="text-sm">
-                <span className="text-gray-500">{cat}: </span>
+                <span className="text-gray-500">{CATEGORY_LABELS[cat] || cat}: </span>
                 <span className="font-medium">{count}</span>
               </div>
             ))}
@@ -291,7 +301,7 @@ export default function AuditDetail() {
         <div className="text-center py-12 text-gray-500">
           <p className="text-lg mb-2">No cost savings found</p>
           <p className="text-sm">
-            Your {audit.audit_type === "rds" ? "RDS databases" : audit.audit_type === "s3" ? "S3 buckets" : "EC2 resources"} appear to be well-optimized.
+            Your {audit.audit_type === "rds" ? "RDS databases" : audit.audit_type === "s3" ? "S3 buckets" : audit.audit_type === "nat" ? "NAT Gateways" : "EC2 resources"} appear to be well-optimized.
           </p>
         </div>
       )}
