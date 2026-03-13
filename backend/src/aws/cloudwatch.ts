@@ -18,6 +18,33 @@ export interface InstanceMetrics {
   ebsWriteBandwidth: number | null;
 }
 
+// Multi-dimension variant for services that require more than one dimension
+// (e.g., ECS needs both ClusterName and ServiceName)
+export async function getMetricMultiDimension(
+  client: CloudWatchClient,
+  dimensions: Array<{ Name: string; Value: string }>,
+  metricName: string,
+  statistics: Statistic[],
+  startTime: Date,
+  endTime: Date,
+  period: number,
+  namespace: string
+) {
+  const resp = await client.send(
+    new GetMetricStatisticsCommand({
+      Namespace: namespace,
+      MetricName: metricName,
+      Dimensions: dimensions,
+      StartTime: startTime,
+      EndTime: endTime,
+      Period: period,
+      Statistics: statistics,
+    })
+  );
+  return resp.Datapoints || [];
+}
+
+// Single-dimension convenience wrapper — delegates to getMetricMultiDimension
 export async function getMetric(
   client: CloudWatchClient,
   dimensionName: string,
@@ -29,18 +56,16 @@ export async function getMetric(
   period: number,
   namespace: string = "AWS/EC2"
 ) {
-  const resp = await client.send(
-    new GetMetricStatisticsCommand({
-      Namespace: namespace,
-      MetricName: metricName,
-      Dimensions: [{ Name: dimensionName, Value: dimensionValue }],
-      StartTime: startTime,
-      EndTime: endTime,
-      Period: period,
-      Statistics: statistics,
-    })
+  return getMetricMultiDimension(
+    client,
+    [{ Name: dimensionName, Value: dimensionValue }],
+    metricName,
+    statistics,
+    startTime,
+    endTime,
+    period,
+    namespace
   );
-  return resp.Datapoints || [];
 }
 
 export async function getInstanceMetrics(

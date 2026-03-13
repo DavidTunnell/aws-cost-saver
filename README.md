@@ -1,6 +1,6 @@
 # AWS Cost Saver
 
-Analyzes your AWS infrastructure for cost savings opportunities using Claude AI. Manage multiple AWS accounts through a web UI, run audits across six service types, and get actionable recommendations with estimated savings.
+Analyzes your AWS infrastructure for cost savings opportunities using Claude AI. Manage multiple AWS accounts through a web UI, run audits across seven service types, and get actionable recommendations with estimated savings.
 
 ## Supported audits
 
@@ -60,6 +60,19 @@ Analyzes your AWS infrastructure for cost savings opportunities using Claude AI.
 - **Right-size memory**: Fine-tuned memory allocation based on actual usage
 - **Function consolidation**: Many small functions that could merge
 - **Scheduling optimization**: Periodic functions with inefficient schedules
+
+### ECS/Fargate
+- **Idle services**: Running services with near-zero CPU and memory utilization
+- **Over-provisioned CPU**: Fargate tasks with consistently low CPU usage that could use smaller CPU allocations
+- **Over-provisioned memory**: Fargate tasks with consistently low memory usage that could use less memory
+- **Fargate Spot candidates**: Non-production services that could run on Fargate Spot for up to 70% savings
+- **Graviton migration**: x86_64 Fargate tasks that could run on cheaper ARM64 Graviton for ~20% savings
+- **Stopped services**: Services scaled to zero that could be cleaned up
+- **Over-provisioned task count**: Services running more tasks than needed based on utilization
+- **Right-size tasks**: Fine-grained CPU/memory tuning based on usage patterns
+- **Scheduling optimization**: Services that don't need 24/7 availability
+- **Service consolidation**: Small services that could merge to reduce per-task overhead
+- **Architecture optimization**: Capacity provider strategies, placement, and launch type improvements
 
 ### DynamoDB
 - **Unused tables**: Zero reads and writes in 14-day monitoring period
@@ -140,7 +153,14 @@ Create an IAM user with this policy (all read-only):
         "dynamodb:DescribeTable",
         "dynamodb:DescribeContinuousBackups",
         "dynamodb:DescribeTimeToLive",
-        "dynamodb:ListTagsOfResource"
+        "dynamodb:ListTagsOfResource",
+        "ecs:ListClusters",
+        "ecs:DescribeClusters",
+        "ecs:ListServices",
+        "ecs:DescribeServices",
+        "ecs:DescribeTaskDefinition",
+        "ecs:ListTasks",
+        "ecs:DescribeTasks"
       ],
       "Resource": "*"
     }
