@@ -2,6 +2,14 @@ import db from "../db";
 import { decrypt } from "../crypto";
 import { collectRDSAccountData } from "../aws/rds-collector";
 import { analyzeRDSWithClaude } from "./rds-analyzer";
+import { registerAuditType } from "../audit-registry";
+
+registerAuditType({
+  key: "rds",
+  label: "RDS",
+  resourceNoun: "databases",
+  runner: runRDSAudit,
+});
 
 export async function runRDSAudit(accountId: number, auditId: number) {
   try {

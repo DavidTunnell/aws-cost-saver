@@ -1,17 +1,17 @@
 import db from "../db";
 import { decrypt } from "../crypto";
-import { collectNatGatewayData } from "../aws/nat-collector";
-import { analyzeNatWithClaude } from "./nat-analyzer";
+import { collectDynamoDBData } from "../aws/dynamodb-collector";
+import { analyzeDynamoDBWithClaude } from "./dynamodb-analyzer";
 import { registerAuditType } from "../audit-registry";
 
 registerAuditType({
-  key: "nat",
-  label: "NAT Gateway",
-  resourceNoun: "gateways",
-  runner: runNatAudit,
+  key: "dynamodb",
+  label: "DynamoDB",
+  resourceNoun: "tables",
+  runner: runDynamoDBAudit,
 });
 
-export async function runNatAudit(accountId: number, auditId: number) {
+export async function runDynamoDBAudit(accountId: number, auditId: number) {
   try {
     const account = db
       .prepare(`SELECT * FROM aws_accounts WHERE id = ?`)
@@ -26,20 +26,20 @@ export async function runNatAudit(accountId: number, auditId: number) {
       secretAccessKey: decrypt(account.secret_access_key_enc),
     };
 
-    // Collect NAT Gateway data
-    const data = await collectNatGatewayData(
+    // Collect DynamoDB data
+    const data = await collectDynamoDBData(
       credentials,
       account.default_region,
       account.name,
       account.aws_account_id || "unknown",
-      (msg) => console.log(`[NAT Audit ${auditId}] ${msg}`)
+      (msg) => console.log(`[DynamoDB Audit ${auditId}] ${msg}`)
     );
 
     // Analyze with deterministic rules + Claude
-    console.log(`[NAT Audit ${auditId}] Analyzing...`);
-    const recommendations = await analyzeNatWithClaude(data);
+    console.log(`[DynamoDB Audit ${auditId}] Analyzing...`);
+    const recommendations = await analyzeDynamoDBWithClaude(data);
     console.log(
-      `[NAT Audit ${auditId}] Got ${recommendations.length} recommendations`
+      `[DynamoDB Audit ${auditId}] Got ${recommendations.length} recommendations`
     );
 
     // Write recommendations to DB
@@ -78,13 +78,13 @@ export async function runNatAudit(accountId: number, auditId: number) {
            instance_count = ?,
            completed_at = datetime('now')
        WHERE id = ?`
-    ).run(totalSavings, data.gateways.length, auditId);
+    ).run(totalSavings, data.tables.length, auditId);
 
     console.log(
-      `[NAT Audit ${auditId}] Completed. Total potential savings: $${totalSavings.toFixed(2)}/mo`
+      `[DynamoDB Audit ${auditId}] Completed. Total potential savings: $${totalSavings.toFixed(2)}/mo`
     );
   } catch (err: any) {
-    console.error(`[NAT Audit ${auditId}] Failed:`, err.message);
+    console.error(`[DynamoDB Audit ${auditId}] Failed:`, err.message);
     db.prepare(
       `UPDATE audits SET status = 'failed', error = ?, completed_at = datetime('now') WHERE id = ?`
     ).run(err.message, auditId);

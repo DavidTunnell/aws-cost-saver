@@ -1,18 +1,13 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { getAudits, type Audit } from "../api";
+import { getAuditUI } from "../audit-registry";
+import "../audit-types";
 
 const STATUS_STYLES: Record<string, string> = {
   running: "bg-blue-100 text-blue-800",
   completed: "bg-green-100 text-green-800",
   failed: "bg-red-100 text-red-800",
-};
-
-const AUDIT_TYPE_STYLES: Record<string, string> = {
-  ec2: "bg-green-50 text-green-700 border-green-200",
-  rds: "bg-purple-50 text-purple-700 border-purple-200",
-  s3: "bg-blue-50 text-blue-700 border-blue-200",
-  nat: "bg-orange-50 text-orange-700 border-orange-200",
 };
 
 export default function Audits() {
@@ -70,13 +65,13 @@ export default function Audits() {
                 <div>
                   <div className="font-medium text-gray-800 flex items-center gap-2">
                     {audit.account_name}
-                    <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${AUDIT_TYPE_STYLES[audit.audit_type] || "bg-gray-50 text-gray-700 border-gray-200"}`}>
-                      {(audit.audit_type || "ec2").toUpperCase()}
+                    <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${getAuditUI(audit.audit_type)?.badgeStyle || "bg-gray-50 text-gray-700 border-gray-200"}`}>
+                      {(getAuditUI(audit.audit_type)?.label || audit.audit_type || "ec2").toUpperCase()}
                     </span>
                   </div>
                   <div className="text-sm text-gray-500">
                     {new Date(audit.started_at).toLocaleString()} &middot;{" "}
-                    {audit.instance_count} {audit.audit_type === "rds" ? "databases" : audit.audit_type === "s3" ? "buckets" : audit.audit_type === "nat" ? "gateways" : "instances"}
+                    {audit.instance_count} {getAuditUI(audit.audit_type)?.resourceNoun || "resources"}
                   </div>
                 </div>
                 <div className="flex items-center gap-4">

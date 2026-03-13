@@ -2,6 +2,14 @@ import db from "../db";
 import { decrypt } from "../crypto";
 import { collectAccountData } from "../aws/collector";
 import { analyzeWithClaude } from "./analyzer";
+import { registerAuditType } from "../audit-registry";
+
+registerAuditType({
+  key: "ec2",
+  label: "EC2",
+  resourceNoun: "instances",
+  runner: runAudit,
+});
 
 export async function runAudit(accountId: number, auditId: number) {
   try {
