@@ -8,6 +8,7 @@ import "../services/rds-audit-runner";
 import "../services/s3-audit-runner";
 import "../services/nat-audit-runner";
 import "../services/lambda-audit-runner";
+import "../services/dynamodb-audit-runner";
 
 const router = Router();
 
