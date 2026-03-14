@@ -3,6 +3,7 @@ import { decrypt } from "../crypto";
 import { collectELBData } from "../aws/elb-collector";
 import { analyzeELBWithClaude } from "./elb-analyzer";
 import { registerAuditType } from "../audit-registry";
+import { carryOverResolutions } from "./resolution-carry-over";
 
 registerAuditType({
   key: "elb",
@@ -69,6 +70,8 @@ export async function runELBAudit(accountId: number, auditId: number) {
       }
     });
     writeAll();
+
+    carryOverResolutions(accountId, auditId);
 
     // Mark audit as completed
     db.prepare(

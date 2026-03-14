@@ -3,6 +3,7 @@ import { decrypt } from "../crypto";
 import { collectNatGatewayData } from "../aws/nat-collector";
 import { analyzeNatWithClaude } from "./nat-analyzer";
 import { registerAuditType } from "../audit-registry";
+import { carryOverResolutions } from "./resolution-carry-over";
 
 registerAuditType({
   key: "nat",
@@ -69,6 +70,8 @@ export async function runNatAudit(accountId: number, auditId: number) {
       }
     });
     writeAll();
+
+    carryOverResolutions(accountId, auditId);
 
     // Mark audit as completed
     db.prepare(

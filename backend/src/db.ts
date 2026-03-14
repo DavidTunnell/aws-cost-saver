@@ -71,4 +71,21 @@ try {
   if (!e.message.includes('duplicate column')) throw e;
 }
 
+// Migration: add resolution columns for human-in-the-loop feedback
+try {
+  db.exec(`ALTER TABLE recommendations ADD COLUMN resolution TEXT DEFAULT NULL`);
+} catch (e: any) {
+  if (!e.message.includes('duplicate column')) throw e;
+}
+try {
+  db.exec(`ALTER TABLE recommendations ADD COLUMN resolution_reason TEXT DEFAULT NULL`);
+} catch (e: any) {
+  if (!e.message.includes('duplicate column')) throw e;
+}
+try {
+  db.exec(`ALTER TABLE recommendations ADD COLUMN resolved_at TEXT DEFAULT NULL`);
+} catch (e: any) {
+  if (!e.message.includes('duplicate column')) throw e;
+}
+
 export default db;

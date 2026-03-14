@@ -3,6 +3,7 @@ import { decrypt } from "../crypto";
 import { collectS3AccountData } from "../aws/s3-collector";
 import { analyzeS3WithClaude } from "./s3-analyzer";
 import { registerAuditType } from "../audit-registry";
+import { carryOverResolutions } from "./resolution-carry-over";
 
 registerAuditType({
   key: "s3",
@@ -69,6 +70,8 @@ export async function runS3Audit(accountId: number, auditId: number) {
       }
     });
     writeAll();
+
+    carryOverResolutions(accountId, auditId);
 
     // Mark audit as completed
     db.prepare(

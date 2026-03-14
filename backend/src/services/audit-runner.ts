@@ -3,6 +3,7 @@ import { decrypt } from "../crypto";
 import { collectAccountData } from "../aws/collector";
 import { analyzeWithClaude } from "./analyzer";
 import { registerAuditType } from "../audit-registry";
+import { carryOverResolutions } from "./resolution-carry-over";
 
 registerAuditType({
   key: "ec2",
@@ -69,6 +70,8 @@ export async function runAudit(accountId: number, auditId: number) {
       }
     });
     writeAll();
+
+    carryOverResolutions(accountId, auditId);
 
     // Mark audit as completed
     db.prepare(

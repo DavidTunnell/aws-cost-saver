@@ -17,7 +17,7 @@ export default function SavingsFilter({
   }, [value, onThresholdChange]);
 
   return (
-    <div className="flex items-center gap-3 mb-4">
+    <div className="flex items-center gap-3">
       <label className="text-sm text-gray-600 flex items-center gap-1">
         Min savings:
         <span className="text-gray-400">$</span>
