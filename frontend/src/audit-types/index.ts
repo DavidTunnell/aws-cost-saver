@@ -6,3 +6,4 @@ import "./s3";
 import "./nat";
 import "./lambda";
 import "./dynamodb";
+import "./elb";

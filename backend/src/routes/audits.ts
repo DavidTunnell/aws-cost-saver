@@ -9,6 +9,7 @@ import "../services/s3-audit-runner";
 import "../services/nat-audit-runner";
 import "../services/lambda-audit-runner";
 import "../services/dynamodb-audit-runner";
+import "../services/elb-audit-runner";
 
 const router = Router();
 
