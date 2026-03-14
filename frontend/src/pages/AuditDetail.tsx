@@ -195,12 +195,16 @@ export default function AuditDetail() {
             </p>
           </div>
           <div className="text-right">
-            {audit.status === "running" ? (
+            {audit.status === "running" && audit.audit_type !== "full" ? (
               <div className="flex items-center gap-2">
                 <div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
                 <span className="text-sm text-blue-600 font-medium">
                   Analyzing...
                 </span>
+              </div>
+            ) : audit.status === "running" && audit.audit_type === "full" ? (
+              <div className="text-sm text-blue-600 font-medium">
+                Running all services...
               </div>
             ) : audit.status === "completed" ? (
               <>
@@ -218,26 +222,30 @@ export default function AuditDetail() {
         </div>
 
         {audit.status === "completed" && (
-          <div className="flex gap-4 mt-4 pt-4 border-t border-gray-100">
-            <div className="text-sm">
-              <span className="text-gray-500">{(getAuditUI(audit.audit_type)?.resourceNoun || "resources").charAt(0).toUpperCase() + (getAuditUI(audit.audit_type)?.resourceNoun || "resources").slice(1)} analyzed: </span>
-              <span className="font-medium">{audit.instance_count}</span>
-            </div>
-            <div className="text-sm">
-              <span className="text-gray-500">Findings: </span>
-              <span className="font-medium">
-                {filteredRecs.length}
-                {hiddenCount > 0 && (
-                  <span className="text-gray-400 font-normal"> of {audit.recommendations.length}</span>
-                )}
-              </span>
-            </div>
-            {Object.entries(categoryCounts).map(([cat, count]) => (
-              <div key={cat} className="text-sm">
-                <span className="text-gray-500">{getAllCategoryLabels()[cat] || cat}: </span>
-                <span className="font-medium">{count}</span>
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <div className="flex gap-4 mb-2">
+              <div className="text-sm">
+                <span className="text-gray-500">{(getAuditUI(audit.audit_type)?.resourceNoun || "resources").charAt(0).toUpperCase() + (getAuditUI(audit.audit_type)?.resourceNoun || "resources").slice(1)} analyzed: </span>
+                <span className="font-medium">{audit.instance_count}</span>
               </div>
-            ))}
+              <div className="text-sm">
+                <span className="text-gray-500">Findings: </span>
+                <span className="font-medium">
+                  {filteredRecs.length}
+                  {hiddenCount > 0 && (
+                    <span className="text-gray-400 font-normal"> of {audit.recommendations.length}</span>
+                  )}
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
+              {Object.entries(categoryCounts).map(([cat, count]) => (
+                <div key={cat} className="text-sm">
+                  <span className="text-gray-500">{getAllCategoryLabels()[cat] || cat}: </span>
+                  <span className="font-medium">{count}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -247,6 +255,46 @@ export default function AuditDetail() {
           </div>
         )}
       </div>
+
+      {audit.audit_type === "full" && audit.child_audits && audit.child_audits.length > 0 && (
+        <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Service Progress</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+            {audit.child_audits.map((child) => (
+              <div
+                key={child.id}
+                className={`flex items-center gap-2 px-3 py-2 rounded text-sm ${
+                  child.status === "completed"
+                    ? "bg-green-50 text-green-700"
+                    : child.status === "failed"
+                      ? "bg-red-50 text-red-700"
+                      : "bg-blue-50 text-blue-700"
+                }`}
+              >
+                {child.status === "running" && (
+                  <div className="animate-spin h-3.5 w-3.5 border-2 border-blue-600 border-t-transparent rounded-full shrink-0"></div>
+                )}
+                {child.status === "completed" && (
+                  <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+                {child.status === "failed" && (
+                  <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                )}
+                <span className="font-medium">{child.label}</span>
+              </div>
+            ))}
+          </div>
+          {audit.status === "running" && (
+            <div className="mt-3 text-xs text-gray-400">
+              Aggregation and deduplication will run after all services complete.
+            </div>
+          )}
+        </div>
+      )}
 
       {audit.status === "completed" && audit.recommendations.length > 0 && (
         <SavingsFilter onThresholdChange={setMinSavings} />

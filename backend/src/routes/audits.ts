@@ -10,16 +10,18 @@ import "../services/nat-audit-runner";
 import "../services/lambda-audit-runner";
 import "../services/dynamodb-audit-runner";
 import "../services/elb-audit-runner";
+import "../services/full-audit-runner";
 
 const router = Router();
 
-// List all audits
+// List all audits (exclude child audits spawned by full audits)
 router.get("/", (_req: Request, res: Response) => {
   const rows = db
     .prepare(
       `SELECT a.*, ac.name as account_name
        FROM audits a
        JOIN aws_accounts ac ON a.account_id = ac.id
+       WHERE a.parent_audit_id IS NULL
        ORDER BY a.started_at DESC`
     )
     .all();
@@ -45,7 +47,22 @@ router.get("/:id", (req: Request, res: Response) => {
     )
     .all(req.params.id);
 
-  res.json({ ...audit, recommendations });
+  // For full audits, include child audit statuses for progress tracking
+  let child_audits: any[] = [];
+  if (audit.audit_type === "full") {
+    const children = db
+      .prepare(`SELECT id, audit_type, status, error FROM audits WHERE parent_audit_id = ?`)
+      .all(req.params.id) as any[];
+    child_audits = children.map((c: any) => ({
+      id: c.id,
+      audit_type: c.audit_type,
+      status: c.status,
+      error: c.error,
+      label: getAuditType(c.audit_type)?.label || c.audit_type,
+    }));
+  }
+
+  res.json({ ...audit, recommendations, child_audits });
 });
 
 // Start a new audit

@@ -74,8 +74,17 @@ export interface Recommendation {
   details: string;
 }
 
+export interface ChildAudit {
+  id: number;
+  audit_type: string;
+  status: string;
+  error: string | null;
+  label: string;
+}
+
 export interface AuditDetail extends Audit {
   recommendations: Recommendation[];
+  child_audits?: ChildAudit[];
 }
 
 export const getAudits = () => request<Audit[]>("/audits");
