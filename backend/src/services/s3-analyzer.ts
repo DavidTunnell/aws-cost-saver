@@ -271,6 +271,19 @@ function mergeS3Recommendations(
   ]);
 
   const filteredLlm = llm.filter((r) => !deterministicCategories.has(r.category));
+
+  // Cap LLM savings: don't let LLM suggest savings > actual cost for a resource
+  const costByResource = new Map<string, number>();
+  for (const r of deterministic) {
+    costByResource.set(r.instanceId, Math.max(costByResource.get(r.instanceId) || 0, r.currentMonthlyCost));
+  }
+  for (const r of filteredLlm) {
+    const maxCost = costByResource.get(r.instanceId);
+    if (maxCost != null && r.estimatedSavings > maxCost) {
+      r.estimatedSavings = maxCost;
+    }
+  }
+
   return [...deterministic, ...filteredLlm];
 }
 
