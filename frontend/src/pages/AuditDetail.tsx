@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { getAudit, type AuditDetail as AuditDetailType, type Recommendation } from "../api";
 import RecommendationCard from "../components/RecommendationCard";
+import SavingsFilter from "../components/SavingsFilter";
 import { getAuditUI, getAllCategoryLabels } from "../audit-registry";
 import "../audit-types";
 
@@ -94,6 +95,7 @@ export default function AuditDetail() {
   const { id } = useParams<{ id: string }>();
   const [audit, setAudit] = useState<AuditDetailType | null>(null);
   const [error, setError] = useState("");
+  const [minSavings, setMinSavings] = useState(1);
 
   const exportPdf = useCallback(() => {
     if (!audit || audit.status !== "completed") return;
@@ -136,7 +138,16 @@ export default function AuditDetail() {
     return <div className="text-gray-500">Loading...</div>;
   }
 
-  const categoryCounts = audit.recommendations.reduce(
+  const filteredRecs = audit.recommendations.filter(
+    (r) => r.estimated_savings >= minSavings
+  );
+  const hiddenCount = audit.recommendations.length - filteredRecs.length;
+
+  const filteredSavings = filteredRecs.reduce(
+    (sum, r) => sum + r.estimated_savings, 0
+  );
+
+  const categoryCounts = filteredRecs.reduce(
     (acc, r) => {
       acc[r.category] = (acc[r.category] || 0) + 1;
       return acc;
@@ -194,7 +205,7 @@ export default function AuditDetail() {
             ) : audit.status === "completed" ? (
               <>
                 <div className="text-3xl font-bold text-green-700">
-                  ${audit.total_savings_monthly.toFixed(2)}
+                  ${filteredSavings.toFixed(2)}
                 </div>
                 <div className="text-sm text-gray-500">
                   potential monthly savings
@@ -215,7 +226,10 @@ export default function AuditDetail() {
             <div className="text-sm">
               <span className="text-gray-500">Findings: </span>
               <span className="font-medium">
-                {audit.recommendations.length}
+                {filteredRecs.length}
+                {hiddenCount > 0 && (
+                  <span className="text-gray-400 font-normal"> of {audit.recommendations.length}</span>
+                )}
               </span>
             </div>
             {Object.entries(categoryCounts).map(([cat, count]) => (
@@ -234,13 +248,24 @@ export default function AuditDetail() {
         )}
       </div>
 
-      {audit.recommendations.length > 0 && (
+      {audit.status === "completed" && audit.recommendations.length > 0 && (
+        <SavingsFilter onThresholdChange={setMinSavings} />
+      )}
+
+      {filteredRecs.length > 0 && (
         <div>
-          <h3 className="text-lg font-semibold text-gray-800 mb-3">
-            Recommendations
-          </h3>
+          <div className="flex items-center gap-3 mb-3">
+            <h3 className="text-lg font-semibold text-gray-800">
+              Recommendations
+            </h3>
+            {hiddenCount > 0 && (
+              <span className="text-xs text-gray-400">
+                {hiddenCount} hidden below ${minSavings} threshold
+              </span>
+            )}
+          </div>
           <div className="space-y-3">
-            {audit.recommendations.map((rec) => (
+            {filteredRecs.map((rec) => (
               <RecommendationCard key={rec.id} rec={rec} />
             ))}
           </div>
@@ -252,6 +277,15 @@ export default function AuditDetail() {
           <p className="text-lg mb-2">No cost savings found</p>
           <p className="text-sm">
             Your {getAuditUI(audit.audit_type)?.label || audit.audit_type.toUpperCase()} {getAuditUI(audit.audit_type)?.resourceNoun || "resources"} appear to be well-optimized.
+          </p>
+        </div>
+      )}
+
+      {audit.status === "completed" && audit.recommendations.length > 0 && filteredRecs.length === 0 && (
+        <div className="text-center py-12 text-gray-500">
+          <p className="text-lg mb-2">All recommendations filtered out</p>
+          <p className="text-sm">
+            {audit.recommendations.length} recommendation{audit.recommendations.length !== 1 ? "s" : ""} below ${minSavings}/mo threshold.
           </p>
         </div>
       )}
