@@ -13,6 +13,7 @@ import {
   DYNAMO_ON_DEMAND_WRITE,
 } from "../aws/dynamodb-collector";
 import type { Recommendation } from "./analyzer";
+import { buildMetadata } from "./analyzer";
 
 export type { Recommendation };
 
@@ -49,6 +50,7 @@ function generateDynamoDBDeterministicRecs(
         estimatedSavings: savings,
         action: `Delete unused DynamoDB table "${table.tableName}" — zero reads and writes in 14 days`,
         reasoning: `Table has had no read or write activity in the monitoring period.${table.pitrEnabled ? ` PITR backup is enabled, adding backup costs.` : ""} Table size: ${tableSizeGb.toFixed(2)}GB, ${table.itemCount.toLocaleString()} items. Created: ${table.creationDate || "unknown"}.`,
+        metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: table.tableArn, billingMode: table.billingMode, tableClass: table.tableClass || "STANDARD", creationDate: table.creationDate }),
       });
       continue; // Skip all other checks for unused tables
     }
@@ -86,6 +88,7 @@ function generateDynamoDBDeterministicRecs(
               estimatedSavings: savings,
               action: `Reduce read capacity for "${table.tableName}" from ${table.provisionedRCU} RCU to ${suggestedRCU} RCU — avg utilization is ${(utilizationPct * 100).toFixed(1)}%`,
               reasoning: `Average consumed RCU is ${avgConsumedRCU.toFixed(1)} vs ${table.provisionedRCU} provisioned (${(utilizationPct * 100).toFixed(1)}% utilization over 14 days). Reducing to ${suggestedRCU} RCU (2x average) saves ~$${savings.toFixed(2)}/mo.${(table.metrics.readThrottleEventsSum ?? 0) > 0 ? ` Note: ${table.metrics.readThrottleEventsSum} read throttle events detected — consider auto-scaling instead of fixed reduction.` : ""}`,
+              metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: table.tableArn, billingMode: table.billingMode, tableClass: table.tableClass || "STANDARD", creationDate: table.creationDate }),
             });
           }
         }
@@ -121,6 +124,7 @@ function generateDynamoDBDeterministicRecs(
               estimatedSavings: savings,
               action: `Reduce write capacity for "${table.tableName}" from ${table.provisionedWCU} WCU to ${suggestedWCU} WCU — avg utilization is ${(utilizationPct * 100).toFixed(1)}%`,
               reasoning: `Average consumed WCU is ${avgConsumedWCU.toFixed(1)} vs ${table.provisionedWCU} provisioned (${(utilizationPct * 100).toFixed(1)}% utilization over 14 days). Reducing to ${suggestedWCU} WCU (2x average) saves ~$${savings.toFixed(2)}/mo.${(table.metrics.writeThrottleEventsSum ?? 0) > 0 ? ` Note: ${table.metrics.writeThrottleEventsSum} write throttle events detected — consider auto-scaling instead of fixed reduction.` : ""}`,
+              metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: table.tableArn, billingMode: table.billingMode, tableClass: table.tableClass || "STANDARD", creationDate: table.creationDate }),
             });
           }
         }
@@ -168,6 +172,7 @@ function generateDynamoDBDeterministicRecs(
             estimatedSavings: savings,
             action: `Switch "${table.tableName}" from Provisioned to On-Demand billing — avg utilization is only ${(avgUtil * 100).toFixed(1)}%`,
             reasoning: `Table has ${(avgUtil * 100).toFixed(1)}% average utilization of provisioned capacity. Current provisioned throughput costs ~$${currentProvisionedCost.toFixed(2)}/mo, while on-demand pricing for actual usage would be ~$${onDemandCost.toFixed(2)}/mo — saving ~$${savings.toFixed(2)}/mo. On-demand is ideal for unpredictable or low-utilization workloads.`,
+            metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: table.tableArn, billingMode: table.billingMode, tableClass: table.tableClass || "STANDARD", creationDate: table.creationDate }),
           });
         }
       }
@@ -201,6 +206,7 @@ function generateDynamoDBDeterministicRecs(
           estimatedSavings: savings,
           action: `Switch "${table.tableName}" from On-Demand to Provisioned billing with ~${provRCU} RCU / ${provWCU} WCU`,
           reasoning: `Table has steady throughput (~${avgRCU.toFixed(0)} avg RCU, ~${avgWCU.toFixed(0)} avg WCU). Current on-demand cost is ~$${currentOnDemandCost.toFixed(2)}/mo vs ~$${provisionedCost.toFixed(2)}/mo provisioned — saving ~$${savings.toFixed(2)}/mo. Use auto-scaling to handle traffic spikes.`,
+          metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: table.tableArn, billingMode: table.billingMode, tableClass: table.tableClass || "STANDARD", creationDate: table.creationDate }),
         });
       }
     }
@@ -253,6 +259,7 @@ function generateDynamoDBDeterministicRecs(
             estimatedSavings: netSavings,
             action: `Switch "${table.tableName}" to Standard-Infrequent Access table class — net savings ~$${netSavings.toFixed(2)}/mo`,
             reasoning: `Table is storage-dominated: ${tableSizeGb.toFixed(1)}GB storage costs ~$${currentStorageCost.toFixed(2)}/mo vs ~$${estimatedThroughputCost.toFixed(2)}/mo throughput. IA saves $${storageSavings.toFixed(2)}/mo on storage but adds ~$${throughputCostIncrease.toFixed(2)}/mo in higher read/write costs — net saving ~$${netSavings.toFixed(2)}/mo.`,
+            metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: table.tableArn, billingMode: table.billingMode, tableClass: table.tableClass || "STANDARD", creationDate: table.creationDate }),
           });
         }
       }
@@ -278,6 +285,7 @@ function generateDynamoDBDeterministicRecs(
             estimatedSavings: pitrCost,
             action: `Review PITR on "${table.tableName}" — backup costs $${pitrCost.toFixed(2)}/mo for a low-traffic table`,
             reasoning: `Point-in-time recovery is enabled on this ${tableSizeGb.toFixed(1)}GB table that has very low traffic (${(dailyReads + dailyWrites).toFixed(0)} operations/day). PITR costs $${DYNAMO_PITR_COST_PER_GB}/GB/mo = $${pitrCost.toFixed(2)}/mo. Consider whether continuous backups are necessary for this table or if periodic on-demand backups would suffice.`,
+            metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: table.tableArn, billingMode: table.billingMode, tableClass: table.tableClass || "STANDARD", creationDate: table.creationDate }),
           });
         }
       }
@@ -345,6 +353,28 @@ export async function analyzeDynamoDBWithClaude(
       } catch (err: any) {
         console.warn(`DynamoDB LLM analysis failed: ${err.message}`);
       }
+    }
+  }
+
+  // Enrich LLM recs with metadata and correct pricing from collector data
+  const tableMap = new Map(data.tables.map(t => [t.tableName, t]));
+  for (const rec of llmRecs) {
+    const table = tableMap.get(rec.instanceId);
+    if (table) {
+      // Override LLM's currentMonthlyCost with actual known cost
+      if (table.currentMonthlyCost > 0) {
+        rec.currentMonthlyCost = table.currentMonthlyCost;
+      }
+      // Recalculate severity from corrected savings (LLM severity is unreliable)
+      rec.severity = getSeverity(rec.estimatedSavings);
+      rec.metadata = buildMetadata({
+        region: data.region,
+        accountId: data.accountId,
+        arn: table.tableArn,
+        billingMode: table.billingMode,
+        tableClass: table.tableClass || "STANDARD",
+        creationDate: table.creationDate,
+      });
     }
   }
 
@@ -439,6 +469,14 @@ function mergeDynamoDBRecommendations(
     const maxCost = costByResource.get(r.instanceId);
     if (maxCost != null && r.estimatedSavings > maxCost) {
       r.estimatedSavings = maxCost;
+    }
+    // Self-cap: LLM savings should never exceed the LLM's own stated cost for the resource
+    if (r.currentMonthlyCost > 0 && r.estimatedSavings > r.currentMonthlyCost) {
+      r.estimatedSavings = r.currentMonthlyCost;
+    }
+    // Zero-cost edge case: can't save money on a $0 resource
+    if (r.currentMonthlyCost === 0 && r.estimatedSavings > 0) {
+      r.estimatedSavings = 0;
     }
   }
 

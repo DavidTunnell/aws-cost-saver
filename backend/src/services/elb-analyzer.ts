@@ -5,6 +5,7 @@ import type {
 } from "../aws/elb-collector";
 import type { TargetGroupInfo } from "../aws/elb";
 import type { Recommendation } from "./analyzer";
+import { buildMetadata } from "./analyzer";
 
 // Re-export for convenience
 export type { Recommendation };
@@ -91,6 +92,7 @@ function generateELBDeterministicRecs(
               estimatedSavings: savings,
               action: `Delete idle ${typeLabel} "${lb.name}" — zero traffic and zero healthy targets over 14 days`,
               reasoning: `${typeLabel} "${lb.name}" has had no requests/flows and no healthy targets for the monitoring period but costs $${savings.toFixed(2)}/mo.${costNote} If the load balancer is no longer needed, deleting it will eliminate the fixed hourly charge.`,
+              metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: lb.id, type: lb.type, scheme: lb.scheme, vpcId: lb.vpcId, availabilityZones: lb.availabilityZones.join(", ") }),
             });
           }
         }
@@ -138,6 +140,7 @@ function generateELBDeterministicRecs(
             estimatedSavings: savings,
             action: `Review low-traffic ${typeLabel} "${lb.name}" — only ${trafficDesc}. Consider consolidating with another LB or removing if no longer needed.`,
             reasoning: `${typeLabel} "${lb.name}" processes very little traffic but incurs $${lb.currentMonthlyCost.toFixed(2)}/mo in fixed charges. At this volume, the workload may be better served by consolidating into a shared load balancer (using host-based or path-based routing on ALB), or the LB may no longer be needed.`,
+            metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: lb.id, type: lb.type, scheme: lb.scheme, vpcId: lb.vpcId, availabilityZones: lb.availabilityZones.join(", ") }),
           });
         }
       }
@@ -158,6 +161,7 @@ function generateELBDeterministicRecs(
           estimatedSavings: savings,
           action: `Investigate ${typeLabel} "${lb.name}" — has ${lb.targetGroupCount} target group(s) but zero registered targets. Requests are returning 503 errors.`,
           reasoning: `${typeLabel} "${lb.name}" has no registered targets in any of its target groups. This means all incoming requests receive 503 errors. The LB costs $${savings.toFixed(2)}/mo. Either register targets or delete the load balancer if it's no longer needed.`,
+          metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: lb.id, type: lb.type, scheme: lb.scheme, vpcId: lb.vpcId, availabilityZones: lb.availabilityZones.join(", ") }),
         });
       }
     }
@@ -181,6 +185,7 @@ function generateELBDeterministicRecs(
           estimatedSavings: savings,
           action: `Investigate Classic Load Balancer "${lb.name}" — zero registered instances.`,
           reasoning: `Classic Load Balancer "${lb.name}" has no registered instances. The LB costs $${savings.toFixed(2)}/mo and is serving no backend. Either register instances or delete it.`,
+          metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: lb.id, type: lb.type, scheme: lb.scheme, vpcId: lb.vpcId, availabilityZones: lb.availabilityZones.join(", ") }),
         });
       }
     }
@@ -199,6 +204,7 @@ function generateELBDeterministicRecs(
         estimatedSavings: fixedSavings,
         action: `Migrate Classic Load Balancer "${lb.name}" to ALB or NLB — CLBs are previous generation with limited features and slightly higher hourly cost.`,
         reasoning: `Classic Load Balancers are a previous generation service. Migrating to ALB (for HTTP/HTTPS) or NLB (for TCP/UDP) provides: lower fixed hourly cost (~$1.83/mo savings), better performance, host/path-based routing (ALB), WebSocket support, and continued AWS feature updates. AWS provides a migration wizard to assist.`,
+        metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: lb.id, type: lb.type, scheme: lb.scheme, vpcId: lb.vpcId, availabilityZones: lb.availabilityZones.join(", ") }),
       });
     }
 
@@ -214,6 +220,7 @@ function generateELBDeterministicRecs(
         estimatedSavings: 0,
         action: `Add availability zones to ${typeLabel} "${lb.name}" — currently only in ${lb.availabilityZones[0]}. Single-AZ deployment has no redundancy.`,
         reasoning: `${typeLabel} "${lb.name}" is configured in only one AZ (${lb.availabilityZones[0]}). If that AZ experiences issues, the load balancer cannot route traffic. AWS recommends at least 2 AZs for high availability. There is no additional cost for multi-AZ on ALB/CLB; NLB charges for cross-zone data transfer.`,
+        metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: lb.id, type: lb.type, scheme: lb.scheme, vpcId: lb.vpcId, availabilityZones: lb.availabilityZones.join(", ") }),
       });
     }
   }
@@ -230,6 +237,7 @@ function generateELBDeterministicRecs(
       estimatedSavings: 0,
       action: `Delete orphaned target group "${tg.name}" — not associated with any load balancer.`,
       reasoning: `Target group "${tg.name}" (${tg.targetType}, port ${tg.port}) is not associated with any load balancer. It has ${tg.totalTargets} registered target(s). Orphaned target groups add configuration clutter and may indicate incomplete cleanup after a deployment change.`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: tg.arn, targetType: tg.targetType, protocol: tg.protocol, port: String(tg.port) }),
     });
   }
 
@@ -287,6 +295,29 @@ export async function analyzeELBWithClaude(
       } catch (err: any) {
         console.warn(`ELB LLM analysis failed: ${err.message}`);
       }
+    }
+  }
+
+  // Enrich LLM recs with metadata and correct pricing from collector data
+  const lbMap = new Map(data.loadBalancers.map(lb => [lb.id, lb]));
+  for (const rec of llmRecs) {
+    const lb = lbMap.get(rec.instanceId);
+    if (lb) {
+      // Override LLM's currentMonthlyCost with actual known cost
+      if (lb.currentMonthlyCost > 0) {
+        rec.currentMonthlyCost = lb.currentMonthlyCost;
+      }
+      // Recalculate severity from corrected savings (LLM severity is unreliable)
+      rec.severity = getSeverity(rec.estimatedSavings);
+      rec.metadata = buildMetadata({
+        region: data.region,
+        accountId: data.accountId,
+        arn: lb.id,
+        type: lb.type,
+        scheme: lb.scheme,
+        vpcId: lb.vpcId,
+        availabilityZones: lb.availabilityZones.join(", "),
+      });
     }
   }
 
@@ -435,6 +466,14 @@ function mergeELBRecommendations(
     const maxCost = costByResource.get(r.instanceId);
     if (maxCost != null && r.estimatedSavings > maxCost) {
       r.estimatedSavings = maxCost;
+    }
+    // Self-cap: LLM savings should never exceed the LLM's own stated cost for the resource
+    if (r.currentMonthlyCost > 0 && r.estimatedSavings > r.currentMonthlyCost) {
+      r.estimatedSavings = r.currentMonthlyCost;
+    }
+    // Zero-cost edge case: can't save money on a $0 resource
+    if (r.currentMonthlyCost === 0 && r.estimatedSavings > 0) {
+      r.estimatedSavings = 0;
     }
   }
 

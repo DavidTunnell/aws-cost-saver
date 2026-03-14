@@ -12,6 +12,15 @@ export interface Recommendation {
   estimatedSavings: number;
   action: string;
   reasoning: string;
+  metadata?: Record<string, string>;
+}
+
+export function buildMetadata(entries: Record<string, string | undefined | null>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [k, v] of Object.entries(entries)) {
+    if (v) result[k] = v;
+  }
+  return result;
 }
 
 // ─── Deterministic helpers ───────────────────────────────────────────────────
@@ -51,6 +60,7 @@ function generateDeterministicRecs(data: CollectedData): Recommendation[] {
       estimatedSavings: 3.65,
       action: `Release idle Elastic IP ${eip.publicIp} (${eip.allocationId})`,
       reasoning: "This Elastic IP is not associated with any running instance and costs $3.65/mo since Feb 2024 pricing.",
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: `arn:aws:ec2:${data.region}:${data.accountId}:elastic-ip/${eip.allocationId}` }),
     });
   }
 
@@ -67,6 +77,7 @@ function generateDeterministicRecs(data: CollectedData): Recommendation[] {
       estimatedSavings: cost,
       action: `Delete or snapshot unattached volume ${vol.volumeId} (${vol.size}GB ${vol.volumeType})`,
       reasoning: `Unattached EBS volume created ${vol.createTime}, costing $${cost.toFixed(2)}/mo with no instance attached.`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: `arn:aws:ec2:${data.region}:${data.accountId}:volume/${vol.volumeId}` }),
     });
   }
 
@@ -108,6 +119,7 @@ function generateDeterministicRecs(data: CollectedData): Recommendation[] {
         estimatedSavings: cost,
         action: `Deregister unused AMI ${ami.imageId} ("${ami.name}") and delete its ${ami.snapshotIds.length} backing snapshots`,
         reasoning: `AMI not used by any instance. Backing snapshots (${ami.totalSnapshotSizeGb}GB provisioned) cost $${cost.toFixed(2)}/mo${costWarning}.`,
+        metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: `arn:aws:ec2:${data.region}:${data.accountId}:image/${ami.imageId}` }),
       });
       for (const snapId of ami.snapshotIds) {
         snapshotIdsFromUnusedAmis.add(snapId);
@@ -134,6 +146,7 @@ function generateDeterministicRecs(data: CollectedData): Recommendation[] {
       estimatedSavings: cost,
       action: `Delete orphan snapshot ${snap.snapshotId} (${snap.volumeSizeGb}GB provisioned)`,
       reasoning: `Orphan snapshot — source volume ${snap.volumeId || "unknown"} no longer exists and snapshot is not backing any AMI. Created ${snap.startTime}. Cost: $${cost.toFixed(2)}/mo${costWarning}.`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: `arn:aws:ec2:${data.region}:${data.accountId}:snapshot/${snap.snapshotId}` }),
     });
   }
 
@@ -150,6 +163,7 @@ function generateDeterministicRecs(data: CollectedData): Recommendation[] {
       estimatedSavings: inst.ebsMonthlyCost,
       action: `Snapshot and delete EBS volumes on stopped instance ${inst.instanceId} ("${inst.name}") to save $${inst.ebsMonthlyCost.toFixed(2)}/mo`,
       reasoning: `Instance is stopped but ${inst.attachedVolumes.length} attached EBS volume(s) still incur $${inst.ebsMonthlyCost.toFixed(2)}/mo in storage costs.`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: `arn:aws:ec2:${data.region}:${data.accountId}:instance/${inst.instanceId}`, az: inst.availabilityZone, platform: inst.platform }),
     });
   }
 
@@ -169,6 +183,7 @@ function generateDeterministicRecs(data: CollectedData): Recommendation[] {
         estimatedSavings: savings,
         action: `Migrate volume ${vol.volumeId} from gp2 to gp3 (${vol.sizeGb}GB on ${inst.instanceId})`,
         reasoning: `gp3 provides 3000 baseline IOPS (vs gp2 size-dependent) at 20% lower cost, saving $${savings.toFixed(2)}/mo.`,
+        metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: `arn:aws:ec2:${data.region}:${data.accountId}:volume/${vol.volumeId}`, az: inst.availabilityZone }),
       });
     }
   }
@@ -187,6 +202,7 @@ function generateDeterministicRecs(data: CollectedData): Recommendation[] {
         estimatedSavings: vol.iopsWasteMonthlyCost,
         action: `Reduce provisioned IOPS on ${vol.volumeId} or migrate to gp3 (3000 IOPS baseline included)`,
         reasoning: `Provisioned IOPS far exceed actual usage. Reducing to match actual needs saves $${vol.iopsWasteMonthlyCost.toFixed(2)}/mo.`,
+        metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: `arn:aws:ec2:${data.region}:${data.accountId}:volume/${vol.volumeId}`, az: inst.availabilityZone }),
       });
     }
   }
@@ -208,6 +224,7 @@ function generateDeterministicRecs(data: CollectedData): Recommendation[] {
       estimatedSavings: savings,
       action: `Migrate ${inst.instanceId} from ${inst.instanceType} to ${inst.gravitonEquivalent} (Graviton/ARM)`,
       reasoning: `Graviton equivalent saves $${savings.toFixed(2)}/mo ($${inst.onDemandHourly.toFixed(4)}/hr → $${inst.gravitonHourlyPrice.toFixed(4)}/hr). Requires ARM compatibility testing.`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: `arn:aws:ec2:${data.region}:${data.accountId}:instance/${inst.instanceId}`, az: inst.availabilityZone, platform: inst.platform, imageId: inst.imageId, launchTime: inst.launchTime }),
     });
   }
 
@@ -229,6 +246,7 @@ function generateDeterministicRecs(data: CollectedData): Recommendation[] {
       estimatedSavings: savings,
       action: `Upgrade ${inst.instanceId} from ${inst.instanceType} to current generation (e.g., ${family.replace(/\d+/, "7")}i equivalent)`,
       reasoning: `${inst.instanceType} is an old generation type. Current generation offers ~15% cost savings with better performance.`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: `arn:aws:ec2:${data.region}:${data.accountId}:instance/${inst.instanceId}`, az: inst.availabilityZone, platform: inst.platform, imageId: inst.imageId, launchTime: inst.launchTime }),
     });
   }
 
@@ -289,6 +307,39 @@ export async function analyzeWithClaude(
     }
   }
 
+  // Enrich LLM recs with metadata and correct pricing from collector data
+  const instanceMap = new Map(data.instances.map(i => [i.instanceId, i]));
+  for (const rec of llmRecs) {
+    const inst = instanceMap.get(rec.instanceId);
+    if (inst) {
+      // Override LLM's currentMonthlyCost with known cost — prefer Pricing API (on-demand, per-instance)
+      // over Cost Explorer (may reflect RI/SP discounts and is aggregated per instance type)
+      const knownCost = inst.monthlyEstimate ?? inst.actualMonthlyCost;
+      if (inst.monthlyEstimate == null && inst.actualMonthlyCost != null) {
+        console.warn(`[Analyzer] ${inst.instanceId}: using Cost Explorer cost ($${inst.actualMonthlyCost.toFixed(2)}) — Pricing API unavailable`);
+      }
+      if (knownCost != null && knownCost > 0) {
+        rec.currentMonthlyCost = knownCost;
+        // Enforce deterministic savings formulas using the corrected cost
+        if (rec.category === "right-size") rec.estimatedSavings = knownCost * 0.50;
+        else if (rec.category === "stop" || rec.category === "idle") rec.estimatedSavings = knownCost;
+        else if (rec.category === "schedule-stop") rec.estimatedSavings = knownCost * 0.65;
+        else if (rec.category === "reserved-instance" || rec.category === "savings-plan") rec.estimatedSavings = knownCost * 0.40;
+      }
+      // Recalculate severity from corrected savings (LLM severity is unreliable)
+      rec.severity = getSeverity(rec.estimatedSavings);
+      rec.metadata = buildMetadata({
+        region: data.region,
+        accountId: data.accountId,
+        arn: `arn:aws:ec2:${data.region}:${data.accountId}:instance/${inst.instanceId}`,
+        az: inst.availabilityZone,
+        platform: inst.platform,
+        imageId: inst.imageId,
+        launchTime: inst.launchTime,
+      });
+    }
+  }
+
   // Step 3: Merge — deterministic wins on collisions
   const merged = mergeRecommendations(deterministicRecs, llmRecs);
   return deduplicateRecommendations(merged);
@@ -306,6 +357,27 @@ function mergeRecommendations(deterministic: Recommendation[], llm: Recommendati
 
   // Filter out any LLM recs that overlap with deterministic categories
   const filteredLlm = llm.filter((r) => !deterministicCategories.has(r.category));
+
+  // Cap LLM savings: don't let LLM suggest savings > actual cost for a resource
+  const costByResource = new Map<string, number>();
+  for (const r of deterministic) {
+    costByResource.set(r.instanceId, Math.max(costByResource.get(r.instanceId) || 0, r.currentMonthlyCost));
+  }
+  for (const r of filteredLlm) {
+    const maxCost = costByResource.get(r.instanceId);
+    if (maxCost != null && r.estimatedSavings > maxCost) {
+      r.estimatedSavings = maxCost;
+    }
+    // Self-cap: LLM savings should never exceed the LLM's own stated cost for the resource
+    if (r.currentMonthlyCost > 0 && r.estimatedSavings > r.currentMonthlyCost) {
+      r.estimatedSavings = r.currentMonthlyCost;
+    }
+    // Zero-cost edge case: can't save money on a $0 resource
+    if (r.currentMonthlyCost === 0 && r.estimatedSavings > 0) {
+      r.estimatedSavings = 0;
+    }
+  }
+
   return [...deterministic, ...filteredLlm];
 }
 

@@ -4,6 +4,7 @@ import type {
   NatGatewayData,
 } from "../aws/nat-collector";
 import type { Recommendation } from "./analyzer";
+import { buildMetadata } from "./analyzer";
 
 // Re-export for convenience
 export type { Recommendation };
@@ -49,6 +50,7 @@ function generateNatDeterministicRecs(
       estimatedSavings: savings,
       action: `Delete idle NAT Gateway ${gw.natGatewayId} in ${gw.vpcId} — virtually zero traffic in 14 days`,
       reasoning: `NAT Gateway processed less than 1MB of data over the monitoring period but costs $${savings.toFixed(2)}/mo (fixed hourly charge alone is ~$32.85/mo).${costNote}`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, vpcId: gw.vpcId, subnetId: gw.subnetId, az: gw.availabilityZone, publicIp: gw.publicIp }),
     });
   }
 
@@ -81,6 +83,7 @@ function generateNatDeterministicRecs(
       estimatedSavings: savings,
       action: `Review NAT Gateway ${gw.natGatewayId} — only ${dataGb}GB processed in 14 days. Consider removing if workloads can use VPC endpoints or public subnets instead.`,
       reasoning: `NAT Gateway processes very little data (${dataGb}GB in 14 days) but incurs ~$32.85/mo fixed cost. If the traffic can be routed through VPC endpoints or public subnets, the gateway can be removed.${costNote}`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, vpcId: gw.vpcId, subnetId: gw.subnetId, az: gw.availabilityZone, publicIp: gw.publicIp }),
     });
   }
 
@@ -120,6 +123,7 @@ function generateNatDeterministicRecs(
         estimatedSavings: savings,
         action: `Create S3 Gateway Endpoint for ${vpcId} — S3 traffic currently routes through NAT Gateway(s) at $0.045/GB`,
         reasoning: `VPC ${vpcId} has ${vpcGateways.length} NAT Gateway(s) costing $${totalVpcNatCost.toFixed(2)}/mo total but no S3 Gateway Endpoint. S3 Gateway Endpoints are free and eliminate NAT data processing charges for S3 traffic (estimated 15% of NAT cost = $${savings.toFixed(2)}/mo savings).`,
+        metadata: buildMetadata({ region: data.region, accountId: data.accountId, vpcId }),
       });
     }
 
@@ -137,6 +141,7 @@ function generateNatDeterministicRecs(
         estimatedSavings: savings,
         action: `Create DynamoDB Gateway Endpoint for ${vpcId} — DynamoDB traffic currently routes through NAT Gateway(s)`,
         reasoning: `VPC ${vpcId} has NAT Gateway(s) but no DynamoDB Gateway Endpoint. DynamoDB Gateway Endpoints are free and eliminate NAT data processing charges for DynamoDB traffic (estimated $${savings.toFixed(2)}/mo savings).`,
+        metadata: buildMetadata({ region: data.region, accountId: data.accountId, vpcId }),
       });
     }
   }
@@ -178,6 +183,7 @@ function generateNatDeterministicRecs(
       estimatedSavings: savings,
       action: `Consider consolidating ${vpcGws.length} low-utilization NAT Gateways in ${vpcId} to a single gateway`,
       reasoning: `VPC ${vpcId} has ${vpcGws.length} NAT Gateways (${vpcGws.map((g) => g.natGatewayId).join(", ")}), each processing less than 5GB in 14 days. Total cost is $${totalCost.toFixed(2)}/mo. Consolidating to one could save $${savings.toFixed(2)}/mo. Note: this reduces AZ redundancy — acceptable for non-production workloads.`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, vpcId }),
     });
   }
 
@@ -200,6 +206,7 @@ function generateNatDeterministicRecs(
       estimatedSavings: 0,
       action: `Investigate errors on NAT Gateway ${gw.natGatewayId}: ${errorPort > 0 ? `${errorPort} port allocation errors` : ""}${errorPort > 0 && packetDrop > 0 ? ", " : ""}${packetDrop > 0 ? `${packetDrop} dropped packets` : ""} in 14 days`,
       reasoning: `NAT Gateway is experiencing errors that may indicate connectivity issues or capacity problems. Port allocation errors suggest too many concurrent connections from a single source. Dropped packets may cause application retries and increased data transfer costs.`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, vpcId: gw.vpcId, subnetId: gw.subnetId, az: gw.availabilityZone, publicIp: gw.publicIp }),
     });
   }
 
@@ -256,6 +263,28 @@ export async function analyzeNatWithClaude(
       } catch (err: any) {
         console.warn(`NAT LLM analysis failed: ${err.message}`);
       }
+    }
+  }
+
+  // Enrich LLM recs with metadata and correct pricing from collector data
+  const gwMap = new Map(data.gateways.map(g => [g.natGatewayId, g]));
+  for (const rec of llmRecs) {
+    const gw = gwMap.get(rec.instanceId);
+    if (gw) {
+      // Override LLM's currentMonthlyCost with actual known cost
+      if (gw.currentMonthlyCost > 0) {
+        rec.currentMonthlyCost = gw.currentMonthlyCost;
+      }
+      // Recalculate severity from corrected savings (LLM severity is unreliable)
+      rec.severity = getSeverity(rec.estimatedSavings);
+      rec.metadata = buildMetadata({
+        region: data.region,
+        accountId: data.accountId,
+        vpcId: gw.vpcId,
+        subnetId: gw.subnetId,
+        az: gw.availabilityZone,
+        publicIp: gw.publicIp,
+      });
     }
   }
 
@@ -361,6 +390,14 @@ function mergeNatRecommendations(
     const maxCost = costByResource.get(r.instanceId);
     if (maxCost != null && r.estimatedSavings > maxCost) {
       r.estimatedSavings = maxCost;
+    }
+    // Self-cap: LLM savings should never exceed the LLM's own stated cost for the resource
+    if (r.currentMonthlyCost > 0 && r.estimatedSavings > r.currentMonthlyCost) {
+      r.estimatedSavings = r.currentMonthlyCost;
+    }
+    // Zero-cost edge case: can't save money on a $0 resource
+    if (r.currentMonthlyCost === 0 && r.estimatedSavings > 0) {
+      r.estimatedSavings = 0;
     }
   }
 

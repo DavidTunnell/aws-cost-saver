@@ -9,6 +9,44 @@ const SEVERITY_COLORS: Record<string, string> = {
   low: "bg-green-100 text-green-800",
 };
 
+const METADATA_LABELS: Record<string, string> = {
+  region: "Region",
+  accountId: "Account ID",
+  az: "Availability Zone",
+  availabilityZones: "Availability Zones",
+  vpcId: "VPC",
+  subnetId: "Subnet",
+  arn: "ARN",
+  resourceId: "Resource ID",
+  publicIp: "Public IP",
+  engine: "Engine",
+  engineVersion: "Engine Version",
+  storageType: "Storage Type",
+  multiAZ: "Multi-AZ",
+  runtime: "Runtime",
+  memorySize: "Memory (MB)",
+  billingMode: "Billing Mode",
+  tableClass: "Table Class",
+  type: "Type",
+  scheme: "Scheme",
+  platform: "Platform",
+  launchTime: "Launch Time",
+  imageId: "AMI",
+  creationDate: "Created",
+  architecture: "Architecture",
+  numberOfObjects: "Objects",
+  versioningEnabled: "Versioning",
+  snapshotType: "Snapshot Type",
+  validationWarning: "Validation Warning",
+  createdAt: "Created At",
+  storageGb: "Storage (GB)",
+  sourceInstance: "Source Instance",
+  sourceCluster: "Source Cluster",
+  targetType: "Target Type",
+  protocol: "Protocol",
+  port: "Port",
+};
+
 export default function RecommendationCard({
   rec,
   onResolve,
@@ -17,10 +55,11 @@ export default function RecommendationCard({
   onResolve?: (recId: number, resolution: "fixed" | "incorrect" | null, reason?: string) => void;
 }) {
   const [showIncorrectForm, setShowIncorrectForm] = useState(false);
+  const [showMetadata, setShowMetadata] = useState(false);
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
 
-  let details: { reasoning?: string } = {};
+  let details: { reasoning?: string; metadata?: Record<string, string> } = {};
   try {
     details = JSON.parse(rec.details);
   } catch {}
@@ -74,16 +113,52 @@ export default function RecommendationCard({
           {details.reasoning && (
             <p className="text-xs text-gray-500">{details.reasoning}</p>
           )}
+      {details.metadata?.validationWarning && (
+        <div className="mt-2 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded px-3 py-2 text-xs text-amber-800">
+          <span className="shrink-0">&#9888;&#65039;</span>
+          <span>{details.metadata.validationWarning}</span>
+        </div>
+      )}
+      {details.metadata && Object.keys(details.metadata).filter(k => k !== "validationWarning").length > 0 && (
+        <div className="mt-2">
+          <button
+            onClick={() => setShowMetadata(!showMetadata)}
+            className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+          >
+            {showMetadata ? "Hide details \u25BE" : "Resource details \u25B8"}
+          </button>
+          {showMetadata && (
+            <div className="mt-1 grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5 text-xs">
+              {Object.entries(details.metadata).filter(([key]) => key !== "validationWarning").map(([key, value]) => (
+                <div key={key} className="contents">
+                  <span className="text-gray-500 font-medium">
+                    {METADATA_LABELS[key] || key}
+                  </span>
+                  <span className="text-gray-700 font-mono truncate" title={String(value)}>
+                    {String(value)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
         </div>
         <div className="text-right shrink-0">
-          <div className="text-lg font-bold text-green-700">
-            ${rec.estimated_savings.toFixed(2)}
-            <span className="text-xs font-normal text-gray-500">/mo</span>
-          </div>
-          {rec.current_monthly_cost > 0 && (
-            <div className="text-xs text-gray-500">
-              Current: ${rec.current_monthly_cost.toFixed(2)}/mo
-            </div>
+          {rec.category === "cross-service" && rec.estimated_savings === 0 ? (
+            <span className="text-sm font-medium text-purple-600">Strategic</span>
+          ) : (
+            <>
+              <div className="text-lg font-bold text-green-700">
+                ${rec.estimated_savings.toFixed(2)}
+                <span className="text-xs font-normal text-gray-500">/mo</span>
+              </div>
+              {rec.current_monthly_cost > 0 && (
+                <div className="text-xs text-gray-500">
+                  Current: ${rec.current_monthly_cost.toFixed(2)}/mo
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

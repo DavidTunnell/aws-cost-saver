@@ -24,6 +24,7 @@ export interface DedupResult {
   estimatedSavings: number;
   action: string;
   reasoning: string;
+  metadata?: Record<string, string>;
 }
 
 // ─── Deterministic dedup pass ────────────────────────────────────────────────
@@ -198,7 +199,7 @@ async function llmDedup(recs: DbRecommendation[]): Promise<number[]> {
 // ─── Cross-service synthesis pass ────────────────────────────────────────────
 // Generates NEW recommendations only visible from the combined full-audit view.
 
-const SYNTHESIS_SYSTEM_PROMPT = `You are an AWS cost optimization expert. You have been given the deduplicated recommendations from a full cross-service audit. Your job is to identify NEW cost-saving opportunities that are only visible when looking across multiple services together.
+const SYNTHESIS_SYSTEM_PROMPT = `You are an AWS cost optimization expert. You have been given the deduplicated recommendations from a full cross-service audit. Your job is to identify NEW strategic opportunities that are only visible when looking across multiple services together.
 
 Examples of cross-service synthesis:
 - Multiple NAT Gateways in the same region could be consolidated if the VPCs they serve could be peered
@@ -208,7 +209,9 @@ Examples of cross-service synthesis:
 
 ONLY generate recommendations that require cross-service visibility. Do not repeat or rephrase existing recommendations.
 
-Return a JSON array of objects with: instanceId (primary resource ARN/ID), instanceName, instanceType (service name), category ("cross-service"), severity ("high"/"medium"/"low"), currentMonthlyCost, estimatedSavings, action, reasoning.
+Do NOT include cost or savings estimates — individual resource-level savings are already calculated separately. These are strategic recommendations only.
+
+Return a JSON array of objects with: instanceId (primary resource ARN/ID), instanceName, instanceType (service name), category ("cross-service"), severity ("high"/"medium"/"low"), action, reasoning.
 
 If no cross-service opportunities exist, return [].
 Return ONLY a JSON array. No markdown, no explanation.`;
@@ -260,8 +263,8 @@ async function synthesizeCrossServiceRecs(recs: DbRecommendation[]): Promise<Ded
       instanceType: item.instanceType || "",
       category: "cross-service",
       severity: item.severity || "medium",
-      currentMonthlyCost: Number(item.currentMonthlyCost) || 0,
-      estimatedSavings: Number(item.estimatedSavings) || 0,
+      currentMonthlyCost: 0,
+      estimatedSavings: 0,
       action: item.action || "",
       reasoning: item.reasoning || "",
     }));
@@ -292,7 +295,12 @@ export async function deduplicateFullAudit(recs: DbRecommendation[]): Promise<De
   // Convert DB format to output format
   const dedupedResults: DedupResult[] = afterLlmDedup.map((r) => {
     let reasoning = "";
-    try { reasoning = JSON.parse(r.details).reasoning || ""; } catch {}
+    let metadata: Record<string, string> | undefined;
+    try {
+      const parsed = JSON.parse(r.details);
+      reasoning = parsed.reasoning || "";
+      metadata = parsed.metadata;
+    } catch {}
     return {
       instanceId: r.instance_id,
       instanceName: r.instance_name,
@@ -303,6 +311,7 @@ export async function deduplicateFullAudit(recs: DbRecommendation[]): Promise<De
       estimatedSavings: r.estimated_savings,
       action: r.action,
       reasoning,
+      metadata,
     };
   });
 

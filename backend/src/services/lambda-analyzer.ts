@@ -5,6 +5,7 @@ import type {
 } from "../aws/lambda-collector";
 import { LAMBDA_PROVISIONED_COST_PER_GB_HR } from "../aws/lambda-collector";
 import type { Recommendation } from "./analyzer";
+import { buildMetadata } from "./analyzer";
 
 export type { Recommendation };
 
@@ -55,6 +56,7 @@ function generateLambdaDeterministicRecs(
         estimatedSavings: savings,
         action: `Delete unused Lambda function "${fn.functionName}" — zero invocations in 14 days`,
         reasoning: `Function has not been invoked in the monitoring period.${fn.provisionedConcurrency > 0 ? ` It has ${fn.provisionedConcurrency} provisioned concurrency units running (incurring cost even without invocations).` : ""} Last modified: ${fn.lastModified || "unknown"}.`,
+        metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: fn.functionArn, runtime: fn.runtime, memorySize: String(fn.memorySize), architecture: fn.architecture }),
       });
       continue; // Skip all other checks for unused functions
     }
@@ -87,6 +89,7 @@ function generateLambdaDeterministicRecs(
           estimatedSavings: savings,
           action: `Reduce memory for "${fn.functionName}" from ${fn.memorySize}MB to ${suggestedMemoryMb}MB — avg duration is only ${avgDurationMs.toFixed(0)}ms`,
           reasoning: `Function completes quickly (avg ${avgDurationMs.toFixed(0)}ms, max ${maxDurationMs.toFixed(0)}ms) with ${fn.memorySize}MB memory. Reducing to ${suggestedMemoryMb}MB could save ~$${savings.toFixed(2)}/mo. Test to verify performance doesn't degrade.`,
+          metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: fn.functionArn, runtime: fn.runtime, memorySize: String(fn.memorySize), architecture: fn.architecture }),
         });
       }
     }
@@ -103,6 +106,7 @@ function generateLambdaDeterministicRecs(
         estimatedSavings: 0,
         action: `Reduce timeout for "${fn.functionName}" from ${fn.timeout}s to ${Math.max(Math.ceil(maxDurationMs / 1000 * 3), 10)}s — max observed duration is ${(maxDurationMs / 1000).toFixed(1)}s`,
         reasoning: `Timeout (${fn.timeout}s) is ${(fn.timeout * 1000 / maxDurationMs).toFixed(0)}x the max observed duration (${(maxDurationMs / 1000).toFixed(1)}s). Reducing timeout prevents runaway invocations from consuming resources. No direct cost savings but reduces blast radius of failures.`,
+        metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: fn.functionArn, runtime: fn.runtime, memorySize: String(fn.memorySize), architecture: fn.architecture }),
       });
     }
 
@@ -118,6 +122,7 @@ function generateLambdaDeterministicRecs(
         estimatedSavings: 0,
         action: `Upgrade "${fn.functionName}" from deprecated runtime ${fn.runtime} to a supported version`,
         reasoning: `Runtime ${fn.runtime} is deprecated or end-of-life. Deprecated runtimes don't receive security patches and may stop being supported for new deployments. Newer runtimes also offer better performance.`,
+        metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: fn.functionArn, runtime: fn.runtime, memorySize: String(fn.memorySize), architecture: fn.architecture }),
       });
     }
 
@@ -135,6 +140,7 @@ function generateLambdaDeterministicRecs(
           estimatedSavings: savings,
           action: `Migrate "${fn.functionName}" to ARM64 (Graviton2) — ~20% cost reduction with ${fn.runtime}`,
           reasoning: `Function uses x86_64 architecture with ${fn.runtime} which supports ARM64. Graviton2 Lambda functions are ~20% cheaper and often perform better. Ensure dependencies are ARM-compatible before migrating.`,
+          metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: fn.functionArn, runtime: fn.runtime, memorySize: String(fn.memorySize), architecture: fn.architecture }),
         });
       }
     }
@@ -156,6 +162,7 @@ function generateLambdaDeterministicRecs(
         estimatedSavings: savings > 0.01 ? savings : 0,
         action: `Clean up ${excessVersions} old versions of "${fn.functionName}" (currently ${fn.versionCount} published versions)`,
         reasoning: `Function has ${fn.versionCount} published versions. Each version retains its deployment package (${(fn.codeSize / (1024 * 1024)).toFixed(1)}MB). Consider retaining only recent versions referenced by aliases.`,
+        metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: fn.functionArn, runtime: fn.runtime, memorySize: String(fn.memorySize), architecture: fn.architecture }),
       });
     }
 
@@ -183,6 +190,7 @@ function generateLambdaDeterministicRecs(
             estimatedSavings: savings,
             action: `Reduce provisioned concurrency for "${fn.functionName}" from ${fn.provisionedConcurrency} to ${suggested} — peak utilization is only ${(fn.provisionedConcurrencyUtilizationMax * 100).toFixed(0)}%`,
             reasoning: `Provisioned concurrency peak utilization is ${(fn.provisionedConcurrencyUtilizationMax * 100).toFixed(0)}% (max ~${peakUsed} concurrent). Current ${fn.provisionedConcurrency} units cost ~$${currentProvCost.toFixed(2)}/mo. Reducing to ${suggested} saves ~$${savings.toFixed(2)}/mo.`,
+            metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: fn.functionArn, runtime: fn.runtime, memorySize: String(fn.memorySize), architecture: fn.architecture }),
           });
         }
       }
@@ -250,6 +258,28 @@ export async function analyzeLambdaWithClaude(
       } catch (err: any) {
         console.warn(`Lambda LLM analysis failed: ${err.message}`);
       }
+    }
+  }
+
+  // Enrich LLM recs with metadata and correct pricing from collector data
+  const fnMap = new Map(data.functions.map(f => [f.functionName, f]));
+  for (const rec of llmRecs) {
+    const fn = fnMap.get(rec.instanceId);
+    if (fn) {
+      // Override LLM's currentMonthlyCost with actual known cost
+      if (fn.currentMonthlyCost > 0) {
+        rec.currentMonthlyCost = fn.currentMonthlyCost;
+      }
+      // Recalculate severity from corrected savings (LLM severity is unreliable)
+      rec.severity = getSeverity(rec.estimatedSavings);
+      rec.metadata = buildMetadata({
+        region: data.region,
+        accountId: data.accountId,
+        arn: fn.functionArn,
+        runtime: fn.runtime,
+        memorySize: String(fn.memorySize),
+        architecture: fn.architecture,
+      });
     }
   }
 
@@ -332,6 +362,14 @@ function mergeLambdaRecommendations(
     const maxCost = costByResource.get(r.instanceId);
     if (maxCost != null && r.estimatedSavings > maxCost) {
       r.estimatedSavings = maxCost;
+    }
+    // Self-cap: LLM savings should never exceed the LLM's own stated cost for the resource
+    if (r.currentMonthlyCost > 0 && r.estimatedSavings > r.currentMonthlyCost) {
+      r.estimatedSavings = r.currentMonthlyCost;
+    }
+    // Zero-cost edge case: can't save money on a $0 resource
+    if (r.currentMonthlyCost === 0 && r.estimatedSavings > 0) {
+      r.estimatedSavings = 0;
     }
   }
 

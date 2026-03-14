@@ -1,6 +1,7 @@
 import db from "../db";
 import { registerAuditType, getAuditType, getRegisteredTypes } from "../audit-registry";
 import { deduplicateFullAudit, type DbRecommendation } from "./full-audit-analyzer";
+import { validateRecommendations } from "./recommendation-validator";
 import { carryOverResolutions } from "./resolution-carry-over";
 
 registerAuditType({
@@ -92,6 +93,18 @@ export async function runFullAudit(accountId: number, auditId: number) {
     const dedupedRecs = await deduplicateFullAudit(allRecs);
     console.log(`[Full Audit ${auditId}] After dedup + synthesis: ${dedupedRecs.length} recommendations`);
 
+    // 5b. Validate recommendations (modular — does not affect dedup logic)
+    db.prepare(`UPDATE audits SET status = 'validating' WHERE id = ?`).run(auditId);
+    console.log(`[Full Audit ${auditId}] Starting recommendation validation`);
+
+    let finalRecs = dedupedRecs;
+    try {
+      finalRecs = await validateRecommendations(dedupedRecs);
+      console.log(`[Full Audit ${auditId}] Validation complete: ${finalRecs.length} recommendations`);
+    } catch (err: any) {
+      console.warn(`[Full Audit ${auditId}] Validation failed, using unvalidated recs:`, err.message);
+    }
+
     // 6. Write aggregated recommendations to parent audit
     const insertRec = db.prepare(
       `INSERT INTO recommendations
@@ -104,7 +117,7 @@ export async function runFullAudit(accountId: number, auditId: number) {
     const totalInstances = completedChildren.reduce((sum: number, c: any) => sum + (c.instance_count || 0), 0);
 
     const writeAll = db.transaction(() => {
-      for (const rec of dedupedRecs) {
+      for (const rec of finalRecs) {
         totalSavings += rec.estimatedSavings;
         insertRec.run(
           auditId,
@@ -116,7 +129,7 @@ export async function runFullAudit(accountId: number, auditId: number) {
           rec.currentMonthlyCost,
           rec.estimatedSavings,
           rec.action,
-          JSON.stringify({ reasoning: rec.reasoning })
+          JSON.stringify({ reasoning: rec.reasoning, ...(rec.metadata && { metadata: rec.metadata }) })
         );
       }
     });
