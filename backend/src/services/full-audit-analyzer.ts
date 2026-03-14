@@ -24,6 +24,7 @@ export interface DedupResult {
   estimatedSavings: number;
   action: string;
   reasoning: string;
+  metadata?: Record<string, string>;
 }
 
 // ─── Deterministic dedup pass ────────────────────────────────────────────────
@@ -292,7 +293,12 @@ export async function deduplicateFullAudit(recs: DbRecommendation[]): Promise<De
   // Convert DB format to output format
   const dedupedResults: DedupResult[] = afterLlmDedup.map((r) => {
     let reasoning = "";
-    try { reasoning = JSON.parse(r.details).reasoning || ""; } catch {}
+    let metadata: Record<string, string> | undefined;
+    try {
+      const parsed = JSON.parse(r.details);
+      reasoning = parsed.reasoning || "";
+      metadata = parsed.metadata;
+    } catch {}
     return {
       instanceId: r.instance_id,
       instanceName: r.instance_name,
@@ -303,6 +309,7 @@ export async function deduplicateFullAudit(recs: DbRecommendation[]): Promise<De
       estimatedSavings: r.estimated_savings,
       action: r.action,
       reasoning,
+      metadata,
     };
   });
 

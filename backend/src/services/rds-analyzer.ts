@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { RDSCollectedData, RDSInstanceData } from "../aws/rds-collector";
 import type { Recommendation } from "./analyzer";
+import { buildMetadata } from "./analyzer";
 
 // Re-export for convenience
 export type { Recommendation };
@@ -110,6 +111,7 @@ function generateRDSDeterministicRecs(data: RDSCollectedData): Recommendation[] 
         estimatedSavings: savings,
         action: `Stop or delete idle RDS instance ${inst.dbInstanceId} (${inst.engine}) — zero connections in 14 days`,
         reasoning: `No database connections detected over the monitoring period. Instance + storage costs $${savings.toFixed(2)}/mo with no usage.`,
+        metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: inst.dbInstanceArn, resourceId: inst.dbiResourceId, engine: inst.engine, engineVersion: inst.engineVersion, storageType: inst.storageType, multiAZ: String(inst.multiAZ) }),
       });
     }
   }
@@ -133,6 +135,7 @@ function generateRDSDeterministicRecs(data: RDSCollectedData): Recommendation[] 
       estimatedSavings: cost,
       action: `Delete old manual snapshot ${snap.dbSnapshotId} (${snap.allocatedStorageGb}GB, ${snap.engine})`,
       reasoning: `Manual snapshot created ${snap.snapshotCreateTime} is over 90 days old, costing ~$${cost.toFixed(2)}/mo in backup storage.${costNote}`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: snap.dbSnapshotArn, engine: snap.engine, snapshotType: snap.snapshotType, createdAt: snap.snapshotCreateTime, storageGb: String(snap.allocatedStorageGb), sourceInstance: snap.dbInstanceId }),
     });
   }
 
@@ -154,6 +157,7 @@ function generateRDSDeterministicRecs(data: RDSCollectedData): Recommendation[] 
       estimatedSavings: savings,
       action: `Upgrade ${inst.dbInstanceId} from ${inst.dbInstanceClass} to current generation (e.g., ${family.replace(/\d+/, "7")} equivalent)`,
       reasoning: `${inst.dbInstanceClass} is an old generation class. Current generation offers ~15% cost savings with better performance.`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: inst.dbInstanceArn, resourceId: inst.dbiResourceId, engine: inst.engine, engineVersion: inst.engineVersion, storageType: inst.storageType, multiAZ: String(inst.multiAZ) }),
     });
   }
 
@@ -172,6 +176,7 @@ function generateRDSDeterministicRecs(data: RDSCollectedData): Recommendation[] 
       estimatedSavings: savings,
       action: `Migrate ${inst.dbInstanceId} storage from gp2 to gp3 (${inst.allocatedStorageGb}GB)`,
       reasoning: `gp3 provides 3000 baseline IOPS at 30% lower storage cost, saving $${savings.toFixed(2)}/mo.`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: inst.dbInstanceArn, resourceId: inst.dbiResourceId, engine: inst.engine, engineVersion: inst.engineVersion, storageType: inst.storageType, multiAZ: String(inst.multiAZ) }),
     });
   }
 
@@ -193,6 +198,7 @@ function generateRDSDeterministicRecs(data: RDSCollectedData): Recommendation[] 
       estimatedSavings: savings,
       action: `Disable Multi-AZ on non-production instance ${inst.dbInstanceId} (${inst.tags["Environment"] || inst.tags["Env"] || inst.tags["env"] || "dev/test"})`,
       reasoning: `Multi-AZ is enabled on a ${isNonProdTag(inst.tags) ? "non-production" : ""} instance. Disabling saves ~$${savings.toFixed(2)}/mo. Multi-AZ is typically unnecessary for dev/test/staging.`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: inst.dbInstanceArn, resourceId: inst.dbiResourceId, engine: inst.engine, engineVersion: inst.engineVersion, storageType: inst.storageType, multiAZ: String(inst.multiAZ) }),
     });
   }
 
@@ -211,6 +217,7 @@ function generateRDSDeterministicRecs(data: RDSCollectedData): Recommendation[] 
       estimatedSavings: storageCost,
       action: `Snapshot and delete stopped RDS instance ${inst.dbInstanceId} to eliminate $${storageCost.toFixed(2)}/mo storage cost`,
       reasoning: `Stopped RDS instance still incurs storage charges ($${storageCost.toFixed(2)}/mo). WARNING: AWS auto-restarts stopped RDS instances after 7 days. Consider taking a final snapshot and deleting.`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: inst.dbInstanceArn, resourceId: inst.dbiResourceId, engine: inst.engine, engineVersion: inst.engineVersion, storageType: inst.storageType, multiAZ: String(inst.multiAZ) }),
     });
   }
 
@@ -245,6 +252,7 @@ function generateRDSDeterministicRecs(data: RDSCollectedData): Recommendation[] 
       estimatedSavings: savings,
       action: `Consider reducing allocated storage for ${inst.dbInstanceId} from ${inst.allocatedStorageGb}GB to ~${suggestedGb}GB (using ${usedGb.toFixed(0)}GB)`,
       reasoning: `Only ${((1 - freePercent) * 100).toFixed(0)}% of allocated storage is used (${usedGb.toFixed(0)}GB of ${inst.allocatedStorageGb}GB). Note: RDS does not support storage shrink — requires migration to new instance.`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: inst.dbInstanceArn, resourceId: inst.dbiResourceId, engine: inst.engine, engineVersion: inst.engineVersion, storageType: inst.storageType, multiAZ: String(inst.multiAZ) }),
     });
   }
 
@@ -270,6 +278,7 @@ function generateRDSDeterministicRecs(data: RDSCollectedData): Recommendation[] 
       estimatedSavings: savings,
       action: `Reduce backup retention for ${inst.dbInstanceId} from ${inst.backupRetentionPeriod} to 7 days`,
       reasoning: `Non-production instance has ${inst.backupRetentionPeriod}-day backup retention. Reducing to 7 days saves ~$${savings.toFixed(2)}/mo in backup storage costs.`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: inst.dbInstanceArn, resourceId: inst.dbiResourceId, engine: inst.engine, engineVersion: inst.engineVersion, storageType: inst.storageType, multiAZ: String(inst.multiAZ) }),
     });
   }
 
@@ -291,6 +300,7 @@ function generateRDSDeterministicRecs(data: RDSCollectedData): Recommendation[] 
       estimatedSavings: monthlySurcharge,
       action: `Upgrade ${inst.dbInstanceId} from ${inst.engine} ${inst.engineVersion} to a supported version to eliminate Extended Support charges`,
       reasoning: `Engine ${inst.engine} ${inst.engineVersion} is in Year ${support.year} of Extended Support at $${support.rate}/vCPU-hr. With ${vCPUs} vCPUs, this adds $${monthlySurcharge.toFixed(2)}/mo in surcharges.`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: inst.dbInstanceArn, resourceId: inst.dbiResourceId, engine: inst.engine, engineVersion: inst.engineVersion, storageType: inst.storageType, multiAZ: String(inst.multiAZ) }),
     });
   }
 
@@ -320,6 +330,7 @@ function generateRDSDeterministicRecs(data: RDSCollectedData): Recommendation[] 
       estimatedSavings: savings,
       action: `Reduce provisioned IOPS on ${inst.dbInstanceId} from ${inst.provisionedIops} to ~${suggestedIops} (or migrate to gp3 for baseline 3000 IOPS free)`,
       reasoning: `Actual IOPS usage averages ${actualIOPS.toFixed(0)} (${((actualIOPS / inst.provisionedIops) * 100).toFixed(0)}% of ${inst.provisionedIops} provisioned). ${wastedIops} excess IOPS cost $${savings.toFixed(2)}/mo.`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: inst.dbInstanceArn, resourceId: inst.dbiResourceId, engine: inst.engine, engineVersion: inst.engineVersion, storageType: inst.storageType, multiAZ: String(inst.multiAZ) }),
     });
   }
 
@@ -341,6 +352,7 @@ function generateRDSDeterministicRecs(data: RDSCollectedData): Recommendation[] 
         estimatedSavings: cost,
         action: `Delete old manual cluster snapshot ${snap.dbClusterSnapshotId} (${snap.allocatedStorageGb}GB, ${snap.engine})`,
         reasoning: `Manual Aurora cluster snapshot created ${snap.snapshotCreateTime} is over 90 days old, costing ~$${cost.toFixed(2)}/mo in backup storage.${costNote}`,
+        metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: snap.dbClusterSnapshotArn, engine: snap.engine, snapshotType: snap.snapshotType, createdAt: snap.snapshotCreateTime, storageGb: String(snap.allocatedStorageGb), sourceCluster: snap.dbClusterIdentifier }),
       });
     }
   }
@@ -375,6 +387,7 @@ function generateRDSDeterministicRecs(data: RDSCollectedData): Recommendation[] 
       estimatedSavings: savings,
       action: `Consider removing underused read replica ${inst.dbInstanceId} (replica of ${inst.readReplicaSourceId})`,
       reasoning: `Read replica handles only ${(replicaReadRatio * 100).toFixed(1)}% of primary's read IOPS (${inst.readIOPSAvg.toFixed(0)} vs ${primary.readIOPSAvg.toFixed(0)} on primary). Full replica cost is $${savings.toFixed(2)}/mo.`,
+      metadata: buildMetadata({ region: data.region, accountId: data.accountId, arn: inst.dbInstanceArn, resourceId: inst.dbiResourceId, engine: inst.engine, engineVersion: inst.engineVersion, storageType: inst.storageType, multiAZ: String(inst.multiAZ) }),
     });
   }
 
@@ -433,6 +446,24 @@ export async function analyzeRDSWithClaude(
         });
         llmRecs = parseResponse(response);
       }
+    }
+  }
+
+  // Enrich LLM recs with metadata from collector data
+  const rdsInstanceMap = new Map(data.instances.map(i => [i.dbInstanceId, i]));
+  for (const rec of llmRecs) {
+    const inst = rdsInstanceMap.get(rec.instanceId);
+    if (inst) {
+      rec.metadata = buildMetadata({
+        region: data.region,
+        accountId: data.accountId,
+        arn: inst.dbInstanceArn,
+        resourceId: inst.dbiResourceId,
+        engine: inst.engine,
+        engineVersion: inst.engineVersion,
+        storageType: inst.storageType,
+        multiAZ: String(inst.multiAZ),
+      });
     }
   }
 

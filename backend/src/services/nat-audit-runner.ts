@@ -65,7 +65,7 @@ export async function runNatAudit(accountId: number, auditId: number) {
           rec.currentMonthlyCost,
           rec.estimatedSavings,
           rec.action,
-          JSON.stringify({ reasoning: rec.reasoning })
+          JSON.stringify({ reasoning: rec.reasoning, ...(rec.metadata && { metadata: rec.metadata }) })
         );
       }
     });

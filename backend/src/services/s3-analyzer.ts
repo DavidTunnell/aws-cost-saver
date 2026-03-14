@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { S3CollectedData, S3BucketData } from "../aws/s3-collector";
 import type { Recommendation } from "./analyzer";
+import { buildMetadata } from "./analyzer";
 
 // Re-export for convenience
 export type { Recommendation };
@@ -59,6 +60,7 @@ function generateS3DeterministicRecs(data: S3CollectedData): Recommendation[] {
           estimatedSavings: savings,
           action: `Add lifecycle policy to ${bucket.bucketName} to transition or expire old objects`,
           reasoning: `Bucket has ${standardGB.toFixed(1)}GB in Standard with no lifecycle policy. Adding transitions to IA/Glacier could save ~35% ($${savings.toFixed(2)}/mo).${costNote}`,
+          metadata: buildMetadata({ region: bucket.region || data.region, accountId: data.accountId, arn: `arn:aws:s3:::${bucket.bucketName}`, creationDate: bucket.creationDate, numberOfObjects: bucket.numberOfObjects != null ? String(bucket.numberOfObjects) : undefined, versioningEnabled: String(bucket.versioningEnabled) }),
         });
       }
     }
@@ -86,6 +88,7 @@ function generateS3DeterministicRecs(data: S3CollectedData): Recommendation[] {
           estimatedSavings: savings,
           action: `Add lifecycle transitions for ${bucket.bucketName} to move infrequently accessed objects to Standard-IA`,
           reasoning: `All ${standardGB.toFixed(1)}GB is in Standard class. Transitioning ~40% to Standard-IA saves ~$${savings.toFixed(2)}/mo.`,
+          metadata: buildMetadata({ region: bucket.region || data.region, accountId: data.accountId, arn: `arn:aws:s3:::${bucket.bucketName}`, creationDate: bucket.creationDate, numberOfObjects: bucket.numberOfObjects != null ? String(bucket.numberOfObjects) : undefined, versioningEnabled: String(bucket.versioningEnabled) }),
         });
       }
     }
@@ -102,6 +105,7 @@ function generateS3DeterministicRecs(data: S3CollectedData): Recommendation[] {
         estimatedSavings: 0,
         action: `Abort incomplete multipart uploads in ${bucket.bucketName} and add AbortIncompleteMultipartUpload lifecycle rule`,
         reasoning: `Found ${bucket.incompleteMultipartUploads} incomplete multipart upload(s). These consume storage indefinitely until aborted. Add a lifecycle rule to auto-abort after 7 days.`,
+        metadata: buildMetadata({ region: bucket.region || data.region, accountId: data.accountId, arn: `arn:aws:s3:::${bucket.bucketName}`, creationDate: bucket.creationDate, numberOfObjects: bucket.numberOfObjects != null ? String(bucket.numberOfObjects) : undefined, versioningEnabled: String(bucket.versioningEnabled) }),
       });
     }
 
@@ -119,6 +123,7 @@ function generateS3DeterministicRecs(data: S3CollectedData): Recommendation[] {
           estimatedSavings: savings,
           action: `Add NoncurrentVersionExpiration lifecycle rule to ${bucket.bucketName}`,
           reasoning: `Versioning is enabled but no lifecycle policy expires old versions. Noncurrent versions accumulate indefinitely, potentially adding ~20% to costs ($${savings.toFixed(2)}/mo).${costNote}`,
+          metadata: buildMetadata({ region: bucket.region || data.region, accountId: data.accountId, arn: `arn:aws:s3:::${bucket.bucketName}`, creationDate: bucket.creationDate, numberOfObjects: bucket.numberOfObjects != null ? String(bucket.numberOfObjects) : undefined, versioningEnabled: String(bucket.versioningEnabled) }),
         });
       }
     }
@@ -154,6 +159,7 @@ function generateS3DeterministicRecs(data: S3CollectedData): Recommendation[] {
           estimatedSavings: glacierSavings,
           action: `Transition ${bucket.bucketName} to Glacier Instant Retrieval (tagged as backup/archive)`,
           reasoning: `Bucket has ${standardGB.toFixed(1)}GB Standard storage and is tagged for backup/archive use. Moving to Glacier Instant Retrieval saves ~$${glacierSavings.toFixed(2)}/mo.`,
+          metadata: buildMetadata({ region: bucket.region || data.region, accountId: data.accountId, arn: `arn:aws:s3:::${bucket.bucketName}`, creationDate: bucket.creationDate, numberOfObjects: bucket.numberOfObjects != null ? String(bucket.numberOfObjects) : undefined, versioningEnabled: String(bucket.versioningEnabled) }),
         });
       }
     }
@@ -191,6 +197,7 @@ function generateS3DeterministicRecs(data: S3CollectedData): Recommendation[] {
           estimatedSavings: savings,
           action: `Enable S3 Intelligent-Tiering for ${bucket.bucketName}`,
           reasoning: `Bucket has ${standardGB.toFixed(1)}GB in Standard with no Intelligent-Tiering. IT auto-moves data between access tiers, saving ~$${savings.toFixed(2)}/mo after monitoring fees.${costNote}`,
+          metadata: buildMetadata({ region: bucket.region || data.region, accountId: data.accountId, arn: `arn:aws:s3:::${bucket.bucketName}`, creationDate: bucket.creationDate, numberOfObjects: bucket.numberOfObjects != null ? String(bucket.numberOfObjects) : undefined, versioningEnabled: String(bucket.versioningEnabled) }),
         });
       }
     }
@@ -247,6 +254,22 @@ export async function analyzeS3WithClaude(
         });
         llmRecs = parseResponse(response);
       }
+    }
+  }
+
+  // Enrich LLM recs with metadata from collector data
+  const bucketMap = new Map(data.buckets.map(b => [b.bucketName, b]));
+  for (const rec of llmRecs) {
+    const bucket = bucketMap.get(rec.instanceId);
+    if (bucket) {
+      rec.metadata = buildMetadata({
+        region: bucket.region || data.region,
+        accountId: data.accountId,
+        arn: `arn:aws:s3:::${bucket.bucketName}`,
+        creationDate: bucket.creationDate,
+        numberOfObjects: bucket.numberOfObjects != null ? String(bucket.numberOfObjects) : undefined,
+        versioningEnabled: String(bucket.versioningEnabled),
+      });
     }
   }
 

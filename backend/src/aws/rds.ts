@@ -8,6 +8,8 @@ import {
 
 export interface RDSInstanceInfo {
   dbInstanceId: string;
+  dbInstanceArn: string;
+  dbiResourceId: string;
   dbInstanceClass: string;
   engine: string;
   engineVersion: string;
@@ -41,6 +43,7 @@ export interface RDSClusterInfo {
 
 export interface RDSSnapshotInfo {
   dbSnapshotId: string;
+  dbSnapshotArn: string;
   dbInstanceId: string;
   snapshotType: string;
   snapshotCreateTime: string;
@@ -67,6 +70,8 @@ export async function describeDBInstances(
 
       instances.push({
         dbInstanceId: db.DBInstanceIdentifier || "",
+        dbInstanceArn: db.DBInstanceArn || "",
+        dbiResourceId: db.DbiResourceId || "",
         dbInstanceClass: db.DBInstanceClass || "",
         engine: db.Engine || "",
         engineVersion: db.EngineVersion || "",
@@ -148,6 +153,7 @@ export async function describeDBSnapshots(
     for (const snap of resp.DBSnapshots || []) {
       snapshots.push({
         dbSnapshotId: snap.DBSnapshotIdentifier || "",
+        dbSnapshotArn: snap.DBSnapshotArn || "",
         dbInstanceId: snap.DBInstanceIdentifier || "",
         snapshotType: snap.SnapshotType || "manual",
         snapshotCreateTime: snap.SnapshotCreateTime?.toISOString() || "",
@@ -166,6 +172,7 @@ export async function describeDBSnapshots(
 
 export interface RDSClusterSnapshotInfo {
   dbClusterSnapshotId: string;
+  dbClusterSnapshotArn: string;
   dbClusterIdentifier: string;
   snapshotType: string;
   snapshotCreateTime: string;
@@ -190,6 +197,7 @@ export async function describeDBClusterSnapshots(
     for (const snap of resp.DBClusterSnapshots || []) {
       snapshots.push({
         dbClusterSnapshotId: snap.DBClusterSnapshotIdentifier || "",
+        dbClusterSnapshotArn: snap.DBClusterSnapshotArn || "",
         dbClusterIdentifier: snap.DBClusterIdentifier || "",
         snapshotType: snap.SnapshotType || "manual",
         snapshotCreateTime: snap.SnapshotCreateTime?.toISOString() || "",
