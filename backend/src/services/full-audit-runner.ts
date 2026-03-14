@@ -63,7 +63,11 @@ export async function runFullAudit(accountId: number, auditId: number) {
     // Wait for all child audits to complete
     await Promise.allSettled(runnerPromises);
 
-    // 4. Gather results from completed children
+    // 4. Mark parent as consolidating (so the frontend can show a spinner)
+    db.prepare(`UPDATE audits SET status = 'consolidating' WHERE id = ?`).run(auditId);
+    console.log(`[Full Audit ${auditId}] All sub-audits finished — consolidating results`);
+
+    // 5. Gather results from completed children
     const childIds = childAudits.map((c) => c.id);
     const placeholders = childIds.map(() => "?").join(",");
 

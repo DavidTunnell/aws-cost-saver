@@ -120,7 +120,7 @@ export default function AuditDetail() {
     const interval = setInterval(() => {
       getAudit(parseInt(id)).then((data) => {
         setAudit(data);
-        if (data.status !== "running") clearInterval(interval);
+        if (data.status !== "running" && data.status !== "consolidating") clearInterval(interval);
       });
     }, 3000);
     return () => clearInterval(interval);
@@ -203,8 +203,18 @@ export default function AuditDetail() {
                 </span>
               </div>
             ) : audit.status === "running" && audit.audit_type === "full" ? (
-              <div className="text-sm text-blue-600 font-medium">
-                Running all services...
+              <div className="flex items-center gap-2">
+                <div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+                <span className="text-sm text-blue-600 font-medium">
+                  Running all services...
+                </span>
+              </div>
+            ) : audit.status === "consolidating" ? (
+              <div className="flex items-center gap-2">
+                <div className="animate-spin h-5 w-5 border-2 border-purple-600 border-t-transparent rounded-full"></div>
+                <span className="text-sm text-purple-600 font-medium">
+                  Consolidating results...
+                </span>
               </div>
             ) : audit.status === "completed" ? (
               <>
@@ -291,6 +301,12 @@ export default function AuditDetail() {
           {audit.status === "running" && (
             <div className="mt-3 text-xs text-gray-400">
               Aggregation and deduplication will run after all services complete.
+            </div>
+          )}
+          {audit.status === "consolidating" && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-purple-600 font-medium">
+              <div className="animate-spin h-3 w-3 border-2 border-purple-600 border-t-transparent rounded-full"></div>
+              Consolidating and deduplicating results across services...
             </div>
           )}
         </div>
