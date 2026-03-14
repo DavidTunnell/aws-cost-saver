@@ -3,6 +3,7 @@ import { decrypt } from "../crypto";
 import { collectDynamoDBData } from "../aws/dynamodb-collector";
 import { analyzeDynamoDBWithClaude } from "./dynamodb-analyzer";
 import { registerAuditType } from "../audit-registry";
+import { carryOverResolutions } from "./resolution-carry-over";
 
 registerAuditType({
   key: "dynamodb",
@@ -69,6 +70,8 @@ export async function runDynamoDBAudit(accountId: number, auditId: number) {
       }
     });
     writeAll();
+
+    carryOverResolutions(accountId, auditId);
 
     // Mark audit as completed
     db.prepare(

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getAudit, type AuditDetail as AuditDetailType, type Recommendation } from "../api";
+import { getAudit, resolveRecommendation, type AuditDetail as AuditDetailType, type Recommendation } from "../api";
 import RecommendationCard from "../components/RecommendationCard";
 import SavingsFilter from "../components/SavingsFilter";
 import { getAuditUI, getAllCategoryLabels } from "../audit-registry";
@@ -96,6 +96,7 @@ export default function AuditDetail() {
   const [audit, setAudit] = useState<AuditDetailType | null>(null);
   const [error, setError] = useState("");
   const [minSavings, setMinSavings] = useState(1);
+  const [showResolved, setShowResolved] = useState(false);
 
   const exportPdf = useCallback(() => {
     if (!audit || audit.status !== "completed") return;
@@ -126,6 +127,25 @@ export default function AuditDetail() {
     return () => clearInterval(interval);
   }, [id]);
 
+  const handleResolve = async (recId: number, resolution: "fixed" | "incorrect" | null, reason?: string) => {
+    if (!audit) return;
+    try {
+      const updated = await resolveRecommendation(audit.id, recId, resolution, reason);
+      setAudit((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          recommendations: prev.recommendations.map((r) =>
+            r.id === recId ? { ...r, resolution: updated.resolution, resolution_reason: updated.resolution_reason, resolved_at: updated.resolved_at } : r
+          ),
+        };
+      });
+    } catch (err: any) {
+      console.error("Failed to update recommendation:", err);
+      setError(err.message || "Failed to update recommendation");
+    }
+  };
+
   if (error) {
     return (
       <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">
@@ -138,10 +158,13 @@ export default function AuditDetail() {
     return <div className="text-gray-500">Loading...</div>;
   }
 
+  const resolvedCount = audit.recommendations.filter((r) => r.resolution).length;
   const filteredRecs = audit.recommendations.filter(
-    (r) => r.estimated_savings >= minSavings
+    (r) => r.estimated_savings >= minSavings && (showResolved || !r.resolution)
   );
-  const hiddenCount = audit.recommendations.length - filteredRecs.length;
+  const hiddenBySavings = audit.recommendations.filter(
+    (r) => r.estimated_savings < minSavings && (showResolved || !r.resolution)
+  ).length;
 
   const filteredSavings = filteredRecs.reduce(
     (sum, r) => sum + r.estimated_savings, 0
@@ -242,7 +265,7 @@ export default function AuditDetail() {
                 <span className="text-gray-500">Findings: </span>
                 <span className="font-medium">
                   {filteredRecs.length}
-                  {hiddenCount > 0 && (
+                  {hiddenBySavings > 0 && (
                     <span className="text-gray-400 font-normal"> of {audit.recommendations.length}</span>
                   )}
                 </span>
@@ -313,7 +336,20 @@ export default function AuditDetail() {
       )}
 
       {audit.status === "completed" && audit.recommendations.length > 0 && (
-        <SavingsFilter onThresholdChange={setMinSavings} />
+        <div className="flex items-center gap-4 mb-4">
+          <SavingsFilter onThresholdChange={setMinSavings} />
+          {resolvedCount > 0 && (
+            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer whitespace-nowrap">
+              <input
+                type="checkbox"
+                checked={showResolved}
+                onChange={(e) => setShowResolved(e.target.checked)}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              Show resolved ({resolvedCount})
+            </label>
+          )}
+        </div>
       )}
 
       {filteredRecs.length > 0 && (
@@ -322,15 +358,15 @@ export default function AuditDetail() {
             <h3 className="text-lg font-semibold text-gray-800">
               Recommendations
             </h3>
-            {hiddenCount > 0 && (
+            {hiddenBySavings > 0 && (
               <span className="text-xs text-gray-400">
-                {hiddenCount} hidden below ${minSavings} threshold
+                {hiddenBySavings} hidden below ${minSavings} threshold
               </span>
             )}
           </div>
           <div className="space-y-3">
             {filteredRecs.map((rec) => (
-              <RecommendationCard key={rec.id} rec={rec} />
+              <RecommendationCard key={rec.id} rec={rec} onResolve={handleResolve} />
             ))}
           </div>
         </div>

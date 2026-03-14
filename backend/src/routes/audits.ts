@@ -110,4 +110,36 @@ router.post("/", async (req: Request, res: Response) => {
   res.status(201).json({ id: auditId, status: "running" });
 });
 
+// Resolve or unresolve a recommendation
+router.patch("/:auditId/recommendations/:recId", (req: Request, res: Response) => {
+  const { auditId, recId } = req.params;
+  const { resolution, reason } = req.body;
+
+  // Validate
+  if (resolution !== null && resolution !== "fixed" && resolution !== "incorrect") {
+    return res.status(400).json({ error: "resolution must be 'fixed', 'incorrect', or null" });
+  }
+
+  const rec = db
+    .prepare(`SELECT id FROM recommendations WHERE id = ? AND audit_id = ?`)
+    .get(recId, auditId);
+  if (!rec) {
+    return res.status(404).json({ error: "Recommendation not found" });
+  }
+
+  if (resolution === null) {
+    // Undo resolution
+    db.prepare(
+      `UPDATE recommendations SET resolution = NULL, resolution_reason = NULL, resolved_at = NULL WHERE id = ?`
+    ).run(recId);
+  } else {
+    db.prepare(
+      `UPDATE recommendations SET resolution = ?, resolution_reason = ?, resolved_at = datetime('now') WHERE id = ?`
+    ).run(resolution, reason || null, recId);
+  }
+
+  const updated = db.prepare(`SELECT * FROM recommendations WHERE id = ?`).get(recId);
+  res.json(updated);
+});
+
 export default router;

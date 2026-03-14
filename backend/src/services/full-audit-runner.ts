@@ -1,6 +1,7 @@
 import db from "../db";
 import { registerAuditType, getAuditType, getRegisteredTypes } from "../audit-registry";
 import { deduplicateFullAudit, type DbRecommendation } from "./full-audit-analyzer";
+import { carryOverResolutions } from "./resolution-carry-over";
 
 registerAuditType({
   key: "full",
@@ -120,6 +121,8 @@ export async function runFullAudit(accountId: number, auditId: number) {
       }
     });
     writeAll();
+
+    carryOverResolutions(accountId, auditId);
 
     // 7. Mark parent audit as completed
     const failedChildren = childAudits.length - completedChildren.length;

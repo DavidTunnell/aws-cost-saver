@@ -72,6 +72,9 @@ export interface Recommendation {
   estimated_savings: number;
   action: string;
   details: string;
+  resolution: "fixed" | "incorrect" | null;
+  resolution_reason: string | null;
+  resolved_at: string | null;
 }
 
 export interface ChildAudit {
@@ -95,4 +98,15 @@ export const startAudit = (accountId: number, auditType: string = 'ec2') =>
   request<{ id: number; status: string }>("/audits", {
     method: "POST",
     body: JSON.stringify({ account_id: accountId, audit_type: auditType }),
+  });
+
+export const resolveRecommendation = (
+  auditId: number,
+  recId: number,
+  resolution: "fixed" | "incorrect" | null,
+  reason?: string
+) =>
+  request<Recommendation>(`/audits/${auditId}/recommendations/${recId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ resolution, reason }),
   });
