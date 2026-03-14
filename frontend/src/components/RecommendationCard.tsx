@@ -45,6 +45,8 @@ const METADATA_LABELS: Record<string, string> = {
   targetType: "Target Type",
   protocol: "Protocol",
   port: "Port",
+  actualBillCost: "Actual Bill Cost",
+  clusterStorage: "Cluster Storage",
 };
 
 export default function RecommendationCard({
@@ -119,7 +121,7 @@ export default function RecommendationCard({
           <span>{details.metadata.validationWarning}</span>
         </div>
       )}
-      {details.metadata && Object.keys(details.metadata).filter(k => k !== "validationWarning").length > 0 && (
+      {details.metadata && Object.keys(details.metadata).filter(k => k !== "validationWarning" && k !== "actualBillCost").length > 0 && (
         <div className="mt-2">
           <button
             onClick={() => setShowMetadata(!showMetadata)}
@@ -129,7 +131,7 @@ export default function RecommendationCard({
           </button>
           {showMetadata && (
             <div className="mt-1 grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5 text-xs">
-              {Object.entries(details.metadata).filter(([key]) => key !== "validationWarning").map(([key, value]) => (
+              {Object.entries(details.metadata).filter(([key]) => key !== "validationWarning" && key !== "actualBillCost").map(([key, value]) => (
                 <div key={key} className="contents">
                   <span className="text-gray-500 font-medium">
                     {METADATA_LABELS[key] || key}
@@ -156,6 +158,11 @@ export default function RecommendationCard({
               {rec.current_monthly_cost > 0 && (
                 <div className="text-xs text-gray-500">
                   Current: ${rec.current_monthly_cost.toFixed(2)}/mo
+                </div>
+              )}
+              {details.metadata?.actualBillCost && (
+                <div className="text-xs text-gray-400">
+                  Actual bill: ${details.metadata.actualBillCost}
                 </div>
               )}
             </>

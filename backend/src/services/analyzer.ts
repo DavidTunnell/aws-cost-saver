@@ -337,6 +337,11 @@ export async function analyzeWithClaude(
         imageId: inst.imageId,
         launchTime: inst.launchTime,
       });
+      // Show Cost Explorer rate if it differs from on-demand (RI/SP discount visibility)
+      if (inst.actualMonthlyCost != null && inst.monthlyEstimate != null &&
+          Math.abs(inst.actualMonthlyCost - inst.monthlyEstimate) > 1) {
+        rec.metadata.actualBillCost = `$${inst.actualMonthlyCost.toFixed(2)}/mo (Cost Explorer)`;
+      }
     }
   }
 

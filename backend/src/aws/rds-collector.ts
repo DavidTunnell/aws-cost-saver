@@ -41,6 +41,10 @@ export interface RDSInstanceData extends RDSInstanceInfo {
   monthlyEstimate: number | null;
   storageMonthlyPrice: number;
   totalMonthlyEstimate: number;
+  // Aurora cluster storage (cluster-level, shared across members)
+  clusterStorageCostMonthly: number | null;
+  clusterStorageGb: number | null;
+  clusterMemberCount: number | null;
 }
 
 export interface EnrichedRDSSnapshot extends RDSSnapshotInfo {
@@ -272,7 +276,23 @@ export async function collectRDSAccountData(
       monthlyEstimate,
       storageMonthlyPrice,
       totalMonthlyEstimate,
+      clusterStorageCostMonthly: null,
+      clusterStorageGb: null,
+      clusterMemberCount: null,
     });
+  }
+
+  // 2b. Enrich Aurora instances with cluster-level storage cost
+  const AURORA_STORAGE_PRICE_PER_GB = 0.10; // Aurora Standard storage rate
+  for (const cluster of clusters) {
+    const storageCost = cluster.allocatedStorageGb * AURORA_STORAGE_PRICE_PER_GB;
+    for (const inst of instances) {
+      if (inst.dbClusterIdentifier === cluster.dbClusterIdentifier) {
+        inst.clusterStorageCostMonthly = storageCost;
+        inst.clusterStorageGb = cluster.allocatedStorageGb;
+        inst.clusterMemberCount = cluster.members.length;
+      }
+    }
   }
 
   // 3. Build summary

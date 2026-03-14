@@ -476,6 +476,10 @@ export async function analyzeRDSWithClaude(
         storageType: inst.storageType,
         multiAZ: String(inst.multiAZ),
       });
+      // Show Aurora cluster storage cost (shared across members, not per-instance)
+      if (inst.isAurora && inst.clusterStorageCostMonthly != null) {
+        rec.metadata.clusterStorage = `${inst.clusterStorageGb}GB ($${inst.clusterStorageCostMonthly.toFixed(2)}/mo shared across ${inst.clusterMemberCount} members)`;
+      }
     }
   }
 
