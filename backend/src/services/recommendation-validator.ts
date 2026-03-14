@@ -76,23 +76,27 @@ function deterministicValidate(recs: DedupResult[]): { recs: DedupResult[]; fixe
 
 // ─── Part B: LLM coherence check (recs with savings >= $10) ──────────────────
 
-const VALIDATION_SYSTEM_PROMPT = `You are an AWS cost optimization QA reviewer. You are given recommendations that have already passed math/cost validation. Your job is to check ONLY for logical and reasoning errors.
+function getValidationSystemPrompt(): string {
+  const today = new Date().toISOString().split("T")[0];
+  return `You are an AWS cost optimization QA reviewer. Today's date is ${today}. You are given recommendations that have already passed math/cost validation. Your job is to check ONLY for logical and reasoning errors.
 
 For each recommendation, check:
 1. Does the reasoning make sense for the stated category? (e.g., a "right-size" rec should discuss CPU/memory utilization, not storage)
 2. Does the recommended action match what the category implies? (e.g., "rds-gp2-to-gp3" should not recommend deleting the instance)
 3. Is the reasoning specific to the actual resource, or is it vague generic boilerplate that could apply to anything?
+4. Are any time-based claims accurate? (e.g., "created over 90 days ago" — verify against today's date ${today})
 
 For each recommendation index, respond with:
 - "ok" if the recommendation is coherent and makes sense
-- {"flag": "brief explanation"} if something is clearly wrong
+- {"flag": "brief explanation of what is wrong and what should be verified"} if something is clearly wrong
 
 Only flag CLEAR errors. When in doubt, respond with "ok". It is better to let a slightly imperfect recommendation through than to incorrectly flag a valid one.
 
 Return ONLY a JSON object mapping recommendation index (as string) to status. No markdown, no explanation outside the JSON.
 
 Example response:
-{"0": "ok", "1": "ok", "2": {"flag": "reasoning discusses S3 storage tiers but category is EC2 right-size"}}`;
+{"0": "ok", "1": "ok", "2": {"flag": "reasoning discusses S3 storage tiers but category is EC2 right-size — verify the recommendation category is correct"}}`;
+}
 
 function buildValidationPrompt(recs: DedupResult[]): string {
   let prompt = "Review these AWS cost optimization recommendations for logical/reasoning coherence:\n\n";
@@ -125,7 +129,7 @@ async function llmValidate(recs: DedupResult[]): Promise<Map<number, string>> {
     const response = await client.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 2048,
-      system: VALIDATION_SYSTEM_PROMPT,
+      system: getValidationSystemPrompt(),
       messages: [{ role: "user", content: prompt }],
     });
 

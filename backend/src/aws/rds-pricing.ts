@@ -76,7 +76,8 @@ export async function getRDSOnDemandPrice(
   engine: string,
   multiAZ: boolean
 ): Promise<number | null> {
-  const cacheKey = `${dbInstanceClass}:${region}:${engine}:${multiAZ}`;
+  const isAurora = engine.startsWith("aurora");
+  const cacheKey = `${dbInstanceClass}:${region}:${engine}:${multiAZ}:${isAurora}`;
   if (rdsPriceCache.has(cacheKey)) return rdsPriceCache.get(cacheKey)!;
 
   const location = regionNameMap[region];
@@ -87,16 +88,22 @@ export async function getRDSOnDemandPrice(
 
   const deploymentOption = multiAZ ? "Multi-AZ" : "Single-AZ";
 
+  // Build filters — Aurora pricing doesn't use Single-AZ/Multi-AZ deployment options
+  // (Aurora handles HA at the cluster level, not per-instance)
+  const filters: { Type: "TERM_MATCH"; Field: string; Value: string }[] = [
+    { Type: "TERM_MATCH", Field: "instanceType", Value: dbInstanceClass },
+    { Type: "TERM_MATCH", Field: "location", Value: location },
+    { Type: "TERM_MATCH", Field: "databaseEngine", Value: databaseEngine },
+  ];
+  if (!isAurora) {
+    filters.push({ Type: "TERM_MATCH", Field: "deploymentOption", Value: deploymentOption });
+  }
+
   try {
     const resp = await client.send(
       new GetProductsCommand({
         ServiceCode: "AmazonRDS",
-        Filters: [
-          { Type: "TERM_MATCH", Field: "instanceType", Value: dbInstanceClass },
-          { Type: "TERM_MATCH", Field: "location", Value: location },
-          { Type: "TERM_MATCH", Field: "databaseEngine", Value: databaseEngine },
-          { Type: "TERM_MATCH", Field: "deploymentOption", Value: deploymentOption },
-        ],
+        Filters: filters,
       })
     );
 

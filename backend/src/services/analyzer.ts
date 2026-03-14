@@ -312,8 +312,12 @@ export async function analyzeWithClaude(
   for (const rec of llmRecs) {
     const inst = instanceMap.get(rec.instanceId);
     if (inst) {
-      // Override LLM's currentMonthlyCost with actual known cost (LLM often hallucinates this)
-      const knownCost = inst.actualMonthlyCost ?? inst.monthlyEstimate;
+      // Override LLM's currentMonthlyCost with known cost — prefer Pricing API (on-demand, per-instance)
+      // over Cost Explorer (may reflect RI/SP discounts and is aggregated per instance type)
+      const knownCost = inst.monthlyEstimate ?? inst.actualMonthlyCost;
+      if (inst.monthlyEstimate == null && inst.actualMonthlyCost != null) {
+        console.warn(`[Analyzer] ${inst.instanceId}: using Cost Explorer cost ($${inst.actualMonthlyCost.toFixed(2)}) — Pricing API unavailable`);
+      }
       if (knownCost != null && knownCost > 0) {
         rec.currentMonthlyCost = knownCost;
         // Enforce deterministic savings formulas using the corrected cost

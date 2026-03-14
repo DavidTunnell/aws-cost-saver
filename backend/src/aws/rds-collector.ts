@@ -250,8 +250,15 @@ export async function collectRDSAccountData(
       console.warn(`Failed to get pricing for ${inst.dbInstanceClass}: ${err.message}`);
     }
 
+    if (!onDemandHourly) {
+      console.warn(`[RDS Collector] No pricing data for ${inst.dbInstanceId} (${inst.dbInstanceClass}, ${inst.engine}) — cost will be $0`);
+    }
+
     const monthlyEstimate = onDemandHourly ? onDemandHourly * 730 : null;
-    const storageMonthlyPrice = getRDSStorageMonthlyPrice(
+
+    // Aurora storage is billed at the cluster level, not per-instance.
+    // Setting per-instance storage to $0 prevents double-counting across cluster members.
+    const storageMonthlyPrice = inst.isAurora ? 0 : getRDSStorageMonthlyPrice(
       inst.storageType,
       inst.allocatedStorageGb,
       inst.provisionedIops
