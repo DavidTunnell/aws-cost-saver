@@ -1,6 +1,6 @@
 # AWS Cost Saver
 
-Analyzes your AWS infrastructure for cost savings opportunities using Claude AI. Manage multiple AWS accounts through a web UI, run audits across six service types, and get actionable recommendations with estimated savings.
+Analyzes your AWS infrastructure for cost savings opportunities using Claude AI. Manage multiple AWS accounts through a web UI, run audits across seven service types (or all at once with Full Audit), and get actionable recommendations with estimated savings. Mark recommendations as fixed or incorrect and those resolutions carry forward to future audits automatically.
 
 ## Supported audits
 
@@ -73,6 +73,29 @@ Analyzes your AWS infrastructure for cost savings opportunities using Claude AI.
 - **DAX caching**: Read-heavy tables that would benefit from DynamoDB Accelerator
 - **Architecture optimization**: Partition key design, table consolidation, cold data offloading
 
+### ELB (Elastic Load Balancing)
+- **Idle load balancers**: Zero traffic and zero healthy targets over 14 days
+- **Low-traffic load balancers**: Less than 100 requests/day — candidates for consolidation or removal
+- **No registered targets**: Load balancers with zero target group registrations
+- **Classic → ALB/NLB migration**: Classic Load Balancers that should upgrade to Application or Network LBs
+- **Single-AZ load balancers**: LBs in only one availability zone, missing redundancy best practices
+- **Orphaned target groups**: Target groups not attached to any load balancer
+- **Architecture optimization**: Consolidation, routing, and scheduling improvements
+
+### Full Audit
+Runs all seven service audits in parallel, then consolidates the results:
+
+1. **Parallel execution** — Launches EC2, RDS, S3, NAT, Lambda, DynamoDB, and ELB audits simultaneously with per-service progress tracking in the UI
+2. **Deterministic dedup** — Removes exact duplicates and applies cross-category subsumption rules (e.g., an idle instance subsumes right-sizing and Graviton recommendations for the same resource)
+3. **LLM dedup** — Claude identifies cross-service overlaps (e.g., stopping an EC2 instance also eliminates its NAT Gateway traffic savings)
+4. **Cross-service synthesis** — Generates new recommendations only visible from the full audit view, such as multi-service Savings Plans, load balancer consolidation, and Lambda + DynamoDB provisioned throughput bundling
+
+## Resolution tracking
+
+Mark each recommendation as **Fixed** (implemented in AWS) or **Incorrect** (with an explanation). Resolved recommendations are filtered out by default but can be toggled back into view. Resolutions can be undone at any time.
+
+**Carry-over across audits** — When you run a new audit, prior resolutions automatically apply to matching recommendations (matched by resource ID and category). This means you don't have to re-mark the same issues every time you re-audit.
+
 ## Prerequisites
 
 - Node.js 18+
@@ -140,7 +163,12 @@ Create an IAM user with this policy (all read-only):
         "dynamodb:DescribeTable",
         "dynamodb:DescribeContinuousBackups",
         "dynamodb:DescribeTimeToLive",
-        "dynamodb:ListTagsOfResource"
+        "dynamodb:ListTagsOfResource",
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "elasticloadbalancing:DescribeTargetGroups",
+        "elasticloadbalancing:DescribeTargetHealth",
+        "elasticloadbalancing:DescribeTags",
+        "elasticloadbalancing:DescribeInstanceHealth"
       ],
       "Resource": "*"
     }
@@ -150,11 +178,13 @@ Create an IAM user with this policy (all read-only):
 
 ## Architecture
 
-Each audit type follows a three-layer pattern:
+Each of the seven audit types follows a three-layer pattern:
 
 1. **Collector** — Calls AWS APIs (describe/list calls, CloudWatch metrics, Cost Explorer) and returns structured data
 2. **Analyzer** — Hybrid analysis: deterministic rules catch clear-cut savings, then Claude AI handles judgment-based recommendations (architecture, caching, consolidation)
-3. **Audit Runner** — Orchestrates the flow: decrypt credentials → collect → analyze → store results in SQLite
+3. **Audit Runner** — Orchestrates the flow: decrypt credentials → collect → analyze → carry over prior resolutions → store results in SQLite
+
+The **Full Audit** runner acts as a meta-orchestrator — it launches all seven service runners in parallel, waits for completion, then runs a multi-pass deduplication and cross-service synthesis pipeline.
 
 Audit types self-register via a registry pattern — adding a new service requires no changes to existing code. Just create a collector, analyzer, and runner that calls `registerAuditType()`, plus a frontend registration that calls `registerAuditUI()`.
 
@@ -164,3 +194,4 @@ Audit types self-register via a registry pattern — adding a new service requir
 2. Trigger an audit — the backend calls AWS APIs to gather service-specific data (describe calls, CloudWatch metrics, Cost Explorer billing data)
 3. Deterministic rules flag clear savings (unused resources, over-provisioning, generation upgrades), then that data is sent to Claude for judgment-based analysis (architecture improvements, caching opportunities, consolidation)
 4. Claude returns structured JSON recommendations stored in SQLite and displayed in the UI with estimated monthly savings
+5. You review recommendations and mark them as Fixed or Incorrect — these resolutions persist and carry over to future audit runs
