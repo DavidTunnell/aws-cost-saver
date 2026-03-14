@@ -257,11 +257,17 @@ export async function analyzeS3WithClaude(
     }
   }
 
-  // Enrich LLM recs with metadata from collector data
+  // Enrich LLM recs with metadata and correct pricing from collector data
   const bucketMap = new Map(data.buckets.map(b => [b.bucketName, b]));
   for (const rec of llmRecs) {
     const bucket = bucketMap.get(rec.instanceId);
     if (bucket) {
+      // Override LLM's currentMonthlyCost with actual known cost
+      if (bucket.currentMonthlyCost > 0) {
+        rec.currentMonthlyCost = bucket.currentMonthlyCost;
+      }
+      // Recalculate severity from corrected savings (LLM severity is unreliable)
+      rec.severity = getSeverity(rec.estimatedSavings);
       rec.metadata = buildMetadata({
         region: bucket.region || data.region,
         accountId: data.accountId,
@@ -304,6 +310,14 @@ function mergeS3Recommendations(
     const maxCost = costByResource.get(r.instanceId);
     if (maxCost != null && r.estimatedSavings > maxCost) {
       r.estimatedSavings = maxCost;
+    }
+    // Self-cap: LLM savings should never exceed the LLM's own stated cost for the resource
+    if (r.currentMonthlyCost > 0 && r.estimatedSavings > r.currentMonthlyCost) {
+      r.estimatedSavings = r.currentMonthlyCost;
+    }
+    // Zero-cost edge case: can't save money on a $0 resource
+    if (r.currentMonthlyCost === 0 && r.estimatedSavings > 0) {
+      r.estimatedSavings = 0;
     }
   }
 

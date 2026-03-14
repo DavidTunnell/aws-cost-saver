@@ -307,11 +307,23 @@ export async function analyzeWithClaude(
     }
   }
 
-  // Enrich LLM recs with metadata from collector data
+  // Enrich LLM recs with metadata and correct pricing from collector data
   const instanceMap = new Map(data.instances.map(i => [i.instanceId, i]));
   for (const rec of llmRecs) {
     const inst = instanceMap.get(rec.instanceId);
     if (inst) {
+      // Override LLM's currentMonthlyCost with actual known cost (LLM often hallucinates this)
+      const knownCost = inst.actualMonthlyCost ?? inst.monthlyEstimate;
+      if (knownCost != null && knownCost > 0) {
+        rec.currentMonthlyCost = knownCost;
+        // Enforce deterministic savings formulas using the corrected cost
+        if (rec.category === "right-size") rec.estimatedSavings = knownCost * 0.50;
+        else if (rec.category === "stop" || rec.category === "idle") rec.estimatedSavings = knownCost;
+        else if (rec.category === "schedule-stop") rec.estimatedSavings = knownCost * 0.65;
+        else if (rec.category === "reserved-instance" || rec.category === "savings-plan") rec.estimatedSavings = knownCost * 0.40;
+      }
+      // Recalculate severity from corrected savings (LLM severity is unreliable)
+      rec.severity = getSeverity(rec.estimatedSavings);
       rec.metadata = buildMetadata({
         region: data.region,
         accountId: data.accountId,
@@ -351,6 +363,14 @@ function mergeRecommendations(deterministic: Recommendation[], llm: Recommendati
     const maxCost = costByResource.get(r.instanceId);
     if (maxCost != null && r.estimatedSavings > maxCost) {
       r.estimatedSavings = maxCost;
+    }
+    // Self-cap: LLM savings should never exceed the LLM's own stated cost for the resource
+    if (r.currentMonthlyCost > 0 && r.estimatedSavings > r.currentMonthlyCost) {
+      r.estimatedSavings = r.currentMonthlyCost;
+    }
+    // Zero-cost edge case: can't save money on a $0 resource
+    if (r.currentMonthlyCost === 0 && r.estimatedSavings > 0) {
+      r.estimatedSavings = 0;
     }
   }
 

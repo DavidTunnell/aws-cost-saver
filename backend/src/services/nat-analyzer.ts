@@ -266,11 +266,17 @@ export async function analyzeNatWithClaude(
     }
   }
 
-  // Enrich LLM recs with metadata from collector data
+  // Enrich LLM recs with metadata and correct pricing from collector data
   const gwMap = new Map(data.gateways.map(g => [g.natGatewayId, g]));
   for (const rec of llmRecs) {
     const gw = gwMap.get(rec.instanceId);
     if (gw) {
+      // Override LLM's currentMonthlyCost with actual known cost
+      if (gw.currentMonthlyCost > 0) {
+        rec.currentMonthlyCost = gw.currentMonthlyCost;
+      }
+      // Recalculate severity from corrected savings (LLM severity is unreliable)
+      rec.severity = getSeverity(rec.estimatedSavings);
       rec.metadata = buildMetadata({
         region: data.region,
         accountId: data.accountId,
@@ -384,6 +390,14 @@ function mergeNatRecommendations(
     const maxCost = costByResource.get(r.instanceId);
     if (maxCost != null && r.estimatedSavings > maxCost) {
       r.estimatedSavings = maxCost;
+    }
+    // Self-cap: LLM savings should never exceed the LLM's own stated cost for the resource
+    if (r.currentMonthlyCost > 0 && r.estimatedSavings > r.currentMonthlyCost) {
+      r.estimatedSavings = r.currentMonthlyCost;
+    }
+    // Zero-cost edge case: can't save money on a $0 resource
+    if (r.currentMonthlyCost === 0 && r.estimatedSavings > 0) {
+      r.estimatedSavings = 0;
     }
   }
 

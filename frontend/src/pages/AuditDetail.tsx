@@ -42,8 +42,10 @@ function buildPdfHtml(audit: AuditDetailType) {
             ${reasoning ? `<br/><span style="font-size:11px;color:#6b7280;">${reasoning}</span>` : ""}
           </td>
           <td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right;white-space:nowrap;vertical-align:top;">
-            <strong style="color:#15803d;">$${rec.estimated_savings.toFixed(2)}/mo</strong>
-            ${rec.current_monthly_cost > 0 ? `<br/><span style="font-size:11px;color:#6b7280;">from $${rec.current_monthly_cost.toFixed(2)}/mo</span>` : ""}
+            ${rec.category === "cross-service" && rec.estimated_savings === 0
+              ? `<strong style="color:#9333ea;">Strategic</strong>`
+              : `<strong style="color:#15803d;">$${rec.estimated_savings.toFixed(2)}/mo</strong>
+            ${rec.current_monthly_cost > 0 ? `<br/><span style="font-size:11px;color:#6b7280;">from $${rec.current_monthly_cost.toFixed(2)}/mo</span>` : ""}`}
           </td>
         </tr>`;
     })
@@ -121,7 +123,7 @@ export default function AuditDetail() {
     const interval = setInterval(() => {
       getAudit(parseInt(id)).then((data) => {
         setAudit(data);
-        if (data.status !== "running" && data.status !== "consolidating") clearInterval(interval);
+        if (data.status !== "running" && data.status !== "consolidating" && data.status !== "validating") clearInterval(interval);
       });
     }, 3000);
     return () => clearInterval(interval);
@@ -239,6 +241,13 @@ export default function AuditDetail() {
                   Consolidating results...
                 </span>
               </div>
+            ) : audit.status === "validating" ? (
+              <div className="flex items-center gap-2">
+                <div className="animate-spin h-5 w-5 border-2 border-amber-600 border-t-transparent rounded-full"></div>
+                <span className="text-sm text-amber-600 font-medium">
+                  Validating recommendations...
+                </span>
+              </div>
             ) : audit.status === "completed" ? (
               <>
                 <div className="text-3xl font-bold text-green-700">
@@ -330,6 +339,12 @@ export default function AuditDetail() {
             <div className="mt-3 flex items-center gap-2 text-xs text-purple-600 font-medium">
               <div className="animate-spin h-3 w-3 border-2 border-purple-600 border-t-transparent rounded-full"></div>
               Consolidating and deduplicating results across services...
+            </div>
+          )}
+          {audit.status === "validating" && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-amber-600 font-medium">
+              <div className="animate-spin h-3 w-3 border-2 border-amber-600 border-t-transparent rounded-full"></div>
+              Validating recommendation accuracy...
             </div>
           )}
         </div>

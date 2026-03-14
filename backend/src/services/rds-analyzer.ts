@@ -449,11 +449,23 @@ export async function analyzeRDSWithClaude(
     }
   }
 
-  // Enrich LLM recs with metadata from collector data
+  // Enrich LLM recs with metadata and correct pricing from collector data
   const rdsInstanceMap = new Map(data.instances.map(i => [i.dbInstanceId, i]));
   for (const rec of llmRecs) {
     const inst = rdsInstanceMap.get(rec.instanceId);
     if (inst) {
+      // Override LLM's currentMonthlyCost with actual known cost
+      if (inst.totalMonthlyEstimate > 0) {
+        const knownCost = inst.totalMonthlyEstimate;
+        rec.currentMonthlyCost = knownCost;
+        // Enforce deterministic savings formulas using the corrected cost
+        if (rec.category === "rds-right-size") rec.estimatedSavings = knownCost * 0.40;
+        else if (rec.category === "rds-reserved-instance") rec.estimatedSavings = knownCost * 0.40;
+        else if (rec.category === "rds-aurora-migration") rec.estimatedSavings = knownCost * 0.25;
+        // rds-serverless-migration: keep LLM value (30-60% range too wide), capped by self-cap
+      }
+      // Recalculate severity from corrected savings (LLM severity is unreliable)
+      rec.severity = getSeverity(rec.estimatedSavings);
       rec.metadata = buildMetadata({
         region: data.region,
         accountId: data.accountId,
@@ -495,6 +507,14 @@ function mergeRDSRecommendations(
     const maxCost = costByResource.get(r.instanceId);
     if (maxCost != null && r.estimatedSavings > maxCost) {
       r.estimatedSavings = maxCost;
+    }
+    // Self-cap: LLM savings should never exceed the LLM's own stated cost for the resource
+    if (r.currentMonthlyCost > 0 && r.estimatedSavings > r.currentMonthlyCost) {
+      r.estimatedSavings = r.currentMonthlyCost;
+    }
+    // Zero-cost edge case: can't save money on a $0 resource
+    if (r.currentMonthlyCost === 0 && r.estimatedSavings > 0) {
+      r.estimatedSavings = 0;
     }
   }
 

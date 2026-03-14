@@ -356,11 +356,17 @@ export async function analyzeDynamoDBWithClaude(
     }
   }
 
-  // Enrich LLM recs with metadata from collector data
+  // Enrich LLM recs with metadata and correct pricing from collector data
   const tableMap = new Map(data.tables.map(t => [t.tableName, t]));
   for (const rec of llmRecs) {
     const table = tableMap.get(rec.instanceId);
     if (table) {
+      // Override LLM's currentMonthlyCost with actual known cost
+      if (table.currentMonthlyCost > 0) {
+        rec.currentMonthlyCost = table.currentMonthlyCost;
+      }
+      // Recalculate severity from corrected savings (LLM severity is unreliable)
+      rec.severity = getSeverity(rec.estimatedSavings);
       rec.metadata = buildMetadata({
         region: data.region,
         accountId: data.accountId,
@@ -463,6 +469,14 @@ function mergeDynamoDBRecommendations(
     const maxCost = costByResource.get(r.instanceId);
     if (maxCost != null && r.estimatedSavings > maxCost) {
       r.estimatedSavings = maxCost;
+    }
+    // Self-cap: LLM savings should never exceed the LLM's own stated cost for the resource
+    if (r.currentMonthlyCost > 0 && r.estimatedSavings > r.currentMonthlyCost) {
+      r.estimatedSavings = r.currentMonthlyCost;
+    }
+    // Zero-cost edge case: can't save money on a $0 resource
+    if (r.currentMonthlyCost === 0 && r.estimatedSavings > 0) {
+      r.estimatedSavings = 0;
     }
   }
 
