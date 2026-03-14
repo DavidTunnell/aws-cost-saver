@@ -57,4 +57,18 @@ try {
   if (!e.message.includes('duplicate column')) throw e;
 }
 
+// Migration: add details column for full-audit child tracking
+try {
+  db.exec(`ALTER TABLE audits ADD COLUMN details TEXT NOT NULL DEFAULT '{}'`);
+} catch (e: any) {
+  if (!e.message.includes('duplicate column')) throw e;
+}
+
+// Migration: add parent_audit_id for full-audit child relationship
+try {
+  db.exec(`ALTER TABLE audits ADD COLUMN parent_audit_id INTEGER REFERENCES audits(id) ON DELETE CASCADE`);
+} catch (e: any) {
+  if (!e.message.includes('duplicate column')) throw e;
+}
+
 export default db;

@@ -130,44 +130,54 @@ export default function Accounts() {
           {accounts.map((acc) => (
             <div
               key={acc.id}
-              className="bg-white border border-gray-200 rounded-lg p-4 flex items-center justify-between"
+              className="bg-white border border-gray-200 rounded-lg p-4"
             >
-              <div>
-                <div className="font-medium text-gray-800">{acc.name}</div>
-                <div className="text-sm text-gray-500">
-                  {acc.aws_account_id || "Account ID unknown"} &middot;{" "}
-                  {acc.default_region}
-                </div>
-                {testResult?.id === acc.id && (
-                  <div
-                    className={`text-sm mt-1 ${testResult.success ? "text-green-600" : "text-red-600"}`}
-                  >
-                    {testResult.message}
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-gray-800">{acc.name}</div>
+                  <div className="text-sm text-gray-500">
+                    {acc.aws_account_id || "Account ID unknown"} &middot;{" "}
+                    {acc.default_region}
                   </div>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleTest(acc.id)}
-                  disabled={testing === acc.id}
-                  className="border border-gray-300 px-3 py-1.5 rounded text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  {testing === acc.id ? "Testing..." : "Test Connection"}
-                </button>
-                {getAllAuditUIs().map((auditUI) => (
+                  {testResult?.id === acc.id && (
+                    <div
+                      className={`text-sm mt-1 ${testResult.success ? "text-green-600" : "text-red-600"}`}
+                    >
+                      {testResult.message}
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
                   <button
-                    key={auditUI.key}
-                    onClick={() => handleAudit(acc.id, auditUI.key)}
-                    className={`${auditUI.buttonColor} text-white px-3 py-1.5 rounded text-xs font-medium`}
+                    onClick={() => handleTest(acc.id)}
+                    disabled={testing === acc.id}
+                    className="border border-gray-300 px-3 py-1.5 rounded text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                   >
-                    {auditUI.label} Audit
+                    {testing === acc.id ? "Testing..." : "Test Connection"}
                   </button>
-                ))}
+                  {getAllAuditUIs().filter((ui) => ui.key !== "full").map((auditUI) => (
+                    <button
+                      key={auditUI.key}
+                      onClick={() => handleAudit(acc.id, auditUI.key)}
+                      className={`${auditUI.buttonColor} text-white px-3 py-1.5 rounded text-xs font-medium`}
+                    >
+                      {auditUI.label} Audit
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => handleDelete(acc.id)}
+                    className="border border-red-200 text-red-600 px-3 py-1.5 rounded text-xs font-medium hover:bg-red-50"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+              <div className="mt-3 pt-3 border-t border-gray-100 flex justify-end">
                 <button
-                  onClick={() => handleDelete(acc.id)}
-                  className="border border-red-200 text-red-600 px-3 py-1.5 rounded text-xs font-medium hover:bg-red-50"
+                  onClick={() => handleAudit(acc.id, "full")}
+                  className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-2 rounded text-sm font-medium hover:from-blue-700 hover:to-purple-700 transition-all"
                 >
-                  Delete
+                  Full Audit — Run All Services
                 </button>
               </div>
             </div>
