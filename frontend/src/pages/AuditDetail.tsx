@@ -381,7 +381,7 @@ export default function AuditDetail() {
           </div>
           <div className="space-y-3">
             {filteredRecs.map((rec) => (
-              <RecommendationCard key={rec.id} rec={rec} onResolve={handleResolve} />
+              <RecommendationCard key={rec.id} rec={rec} onResolve={handleResolve} accountId={audit.account_id} />
             ))}
           </div>
         </div>

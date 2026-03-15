@@ -1,7 +1,8 @@
 import { useState } from "react";
-import type { Recommendation } from "../api";
+import type { Recommendation, SolutionsData } from "../api";
 import { getAllCategoryLabels } from "../audit-registry";
 import "../audit-types";
+import SolutionsModal from "./SolutionsModal";
 
 const SEVERITY_COLORS: Record<string, string> = {
   high: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300",
@@ -50,12 +51,16 @@ const METADATA_LABELS: Record<string, string> = {
 export default function RecommendationCard({
   rec,
   onResolve,
+  accountId,
 }: {
   rec: Recommendation;
   onResolve?: (recId: number, resolution: "fixed" | "incorrect" | null, reason?: string) => void;
+  accountId?: number;
 }) {
   const [showIncorrectForm, setShowIncorrectForm] = useState(false);
   const [showMetadata, setShowMetadata] = useState(false);
+  const [showSolutions, setShowSolutions] = useState(false);
+  const [cachedSolutions, setCachedSolutions] = useState<SolutionsData | null>(null);
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -163,6 +168,21 @@ export default function RecommendationCard({
         </div>
       </div>
 
+      {/* Solutions modal */}
+      {showSolutions && (
+        <SolutionsModal
+          category={rec.category}
+          action={rec.action}
+          instanceId={rec.instance_id}
+          instanceType={rec.instance_type}
+          metadata={details.metadata || {}}
+          accountId={accountId || 0}
+          cachedSolutions={cachedSolutions}
+          onSolutionsLoaded={setCachedSolutions}
+          onClose={() => setShowSolutions(false)}
+        />
+      )}
+
       {/* Resolution actions */}
       {onResolve && (
         <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
@@ -193,6 +213,12 @@ export default function RecommendationCard({
           ) : (
             <>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowSolutions(true)}
+                  className="text-xs font-medium px-3 py-1 rounded border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors"
+                >
+                  Solutions
+                </button>
                 <button
                   onClick={() => handleResolve("fixed")}
                   disabled={loading}

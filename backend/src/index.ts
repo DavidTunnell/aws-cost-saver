@@ -21,6 +21,7 @@ import cors from "cors";
 import accountsRouter from "./routes/accounts";
 import auditsRouter from "./routes/audits";
 import reportsRouter from "./routes/reports";
+import solutionsRouter from "./routes/solutions";
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "8000", 10);
@@ -31,6 +32,7 @@ app.use(express.json());
 app.use("/api/accounts", accountsRouter);
 app.use("/api/audits", auditsRouter);
 app.use("/api/reports", reportsRouter);
+app.use("/api/solutions", solutionsRouter);
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
