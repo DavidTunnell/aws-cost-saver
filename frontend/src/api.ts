@@ -100,6 +100,44 @@ export const startAudit = (accountId: number, auditType: string = 'ec2') =>
     body: JSON.stringify({ account_id: accountId, audit_type: auditType }),
   });
 
+// Reports
+export interface CostPeriod {
+  start: string;
+  end: string;
+  totalCost: number;
+  byService: Record<string, number>;
+}
+
+export interface CostTrendData {
+  accountId: number;
+  accountName: string;
+  awsAccountId: string;
+  granularity: "MONTHLY" | "DAILY";
+  months: number;
+  periods: CostPeriod[];
+}
+
+export interface ServiceInfo {
+  name: string;
+  totalCost: number;
+}
+
+export const getCostTrends = (
+  accountId: number,
+  months?: number,
+  granularity?: "MONTHLY" | "DAILY",
+  services?: string[]
+) => {
+  const params = new URLSearchParams({ accountId: String(accountId) });
+  if (months) params.set("months", String(months));
+  if (granularity) params.set("granularity", granularity);
+  if (services?.length) params.set("services", services.join(","));
+  return request<CostTrendData>(`/reports/cost-trends?${params}`);
+};
+
+export const getAccountServices = (accountId: number) =>
+  request<{ services: ServiceInfo[] }>(`/reports/services?accountId=${accountId}`);
+
 export const resolveRecommendation = (
   auditId: number,
   recId: number,
