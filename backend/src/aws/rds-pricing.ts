@@ -108,7 +108,7 @@ export async function getRDSOnDemandPrice(
     );
 
     for (const priceStr of resp.PriceList || []) {
-      const product = typeof priceStr === "string" ? JSON.parse(priceStr) : priceStr;
+      const product = JSON.parse(String(priceStr));
       const onDemand = product.terms?.OnDemand;
       if (!onDemand) continue;
 

@@ -18,22 +18,22 @@ export default function SavingsFilter({
 
   return (
     <div className="flex items-center gap-3">
-      <label className="text-sm text-gray-600 flex items-center gap-1">
+      <label className="text-sm text-gray-600 dark:text-gray-400 flex items-center gap-1">
         Min savings:
-        <span className="text-gray-400">$</span>
+        <span className="text-gray-400 dark:text-gray-500">$</span>
         <input
           type="number"
           min="0"
           step="0.5"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          className="w-20 border border-gray-300 rounded px-2 py-1 text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          className="w-20 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-sm text-gray-800 dark:text-gray-100 bg-white dark:bg-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
       </label>
       {parseFloat(value) !== defaultThreshold && (
         <button
           onClick={() => setValue(String(defaultThreshold))}
-          className="text-xs text-blue-600 hover:underline"
+          className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
         >
           Reset
         </button>

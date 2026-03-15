@@ -5,7 +5,7 @@ registerAuditUI({
   label: "Lambda",
   resourceNoun: "functions",
   buttonColor: "bg-amber-600 hover:bg-amber-700",
-  badgeStyle: "bg-amber-50 text-amber-700 border-amber-200",
+  badgeStyle: "bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800",
   categoryLabels: {
     "lambda-unused-function": "Unused Function",
     "lambda-overprovisioned-memory": "Overprovisioned Memory",

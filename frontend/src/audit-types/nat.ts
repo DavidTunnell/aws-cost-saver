@@ -5,7 +5,7 @@ registerAuditUI({
   label: "NAT Gateway",
   resourceNoun: "gateways",
   buttonColor: "bg-orange-600 hover:bg-orange-700",
-  badgeStyle: "bg-orange-50 text-orange-700 border-orange-200",
+  badgeStyle: "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-800",
   categoryLabels: {
     "nat-idle": "Idle NAT Gateway",
     "nat-low-utilization": "Low Utilization",

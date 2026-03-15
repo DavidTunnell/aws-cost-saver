@@ -78,7 +78,7 @@ export async function getOnDemandPrice(
     );
 
     if (resp.PriceList && resp.PriceList.length > 0) {
-      const product = JSON.parse(resp.PriceList[0]);
+      const product = JSON.parse(String(resp.PriceList[0]));
       const onDemand = product.terms?.OnDemand;
       if (onDemand) {
         const termKey = Object.keys(onDemand)[0];

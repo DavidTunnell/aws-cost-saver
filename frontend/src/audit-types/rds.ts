@@ -5,7 +5,7 @@ registerAuditUI({
   label: "RDS",
   resourceNoun: "databases",
   buttonColor: "bg-purple-600 hover:bg-purple-700",
-  badgeStyle: "bg-purple-50 text-purple-700 border-purple-200",
+  badgeStyle: "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:border-purple-800",
   categoryLabels: {
     "rds-idle": "Idle Database",
     "rds-snapshot-cleanup": "RDS Snapshot Cleanup",
