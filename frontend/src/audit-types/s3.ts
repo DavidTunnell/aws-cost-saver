@@ -5,7 +5,7 @@ registerAuditUI({
   label: "S3",
   resourceNoun: "buckets",
   buttonColor: "bg-blue-600 hover:bg-blue-700",
-  badgeStyle: "bg-blue-50 text-blue-700 border-blue-200",
+  badgeStyle: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-800",
   categoryLabels: {
     "s3-no-lifecycle": "No Lifecycle Policy",
     "s3-all-standard": "All Standard Storage",

@@ -150,14 +150,14 @@ export default function AuditDetail() {
 
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded text-sm">
+      <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded text-sm">
         {error}
       </div>
     );
   }
 
   if (!audit) {
-    return <div className="text-gray-500">Loading...</div>;
+    return <div className="text-gray-500 dark:text-gray-400">Loading...</div>;
   }
 
   const resolvedCount = audit.recommendations.filter((r) => r.resolution).length;
@@ -185,14 +185,14 @@ export default function AuditDetail() {
       <div className="flex items-center justify-between mb-4">
         <Link
           to="/audits"
-          className="text-sm text-blue-600 hover:underline"
+          className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
         >
           &larr; Back to Audits
         </Link>
         {audit.status === "completed" && audit.recommendations.length > 0 && (
           <button
             onClick={exportPdf}
-            className="flex items-center gap-2 bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors"
+            className="flex items-center gap-2 bg-gray-800 dark:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-700 dark:hover:bg-gray-600 transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -202,18 +202,18 @@ export default function AuditDetail() {
         )}
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
+      <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 mb-6">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-3">
+            <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-3">
               {audit.account_name}
               <span className={`text-xs font-medium px-2 py-0.5 rounded border ${
-                getAuditUI(audit.audit_type)?.badgeStyle || "bg-gray-50 text-gray-700 border-gray-200"
+                getAuditUI(audit.audit_type)?.badgeStyle || "bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:border-gray-600"
               }`}>
                 {getAuditUI(audit.audit_type)?.label || audit.audit_type.toUpperCase()}
               </span>
             </h2>
-            <p className="text-sm text-gray-500 mt-1">
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
               Started {new Date(audit.started_at).toLocaleString()}
               {audit.completed_at &&
                 ` - Completed ${new Date(audit.completed_at).toLocaleString()}`}
@@ -223,59 +223,59 @@ export default function AuditDetail() {
             {audit.status === "running" && audit.audit_type !== "full" ? (
               <div className="flex items-center gap-2">
                 <div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-                <span className="text-sm text-blue-600 font-medium">
+                <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">
                   Analyzing...
                 </span>
               </div>
             ) : audit.status === "running" && audit.audit_type === "full" ? (
               <div className="flex items-center gap-2">
                 <div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full"></div>
-                <span className="text-sm text-blue-600 font-medium">
+                <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">
                   Running all services...
                 </span>
               </div>
             ) : audit.status === "consolidating" ? (
               <div className="flex items-center gap-2">
                 <div className="animate-spin h-5 w-5 border-2 border-purple-600 border-t-transparent rounded-full"></div>
-                <span className="text-sm text-purple-600 font-medium">
+                <span className="text-sm text-purple-600 dark:text-purple-400 font-medium">
                   Consolidating results...
                 </span>
               </div>
             ) : audit.status === "validating" ? (
               <div className="flex items-center gap-2">
                 <div className="animate-spin h-5 w-5 border-2 border-amber-600 border-t-transparent rounded-full"></div>
-                <span className="text-sm text-amber-600 font-medium">
+                <span className="text-sm text-amber-600 dark:text-amber-400 font-medium">
                   Validating recommendations...
                 </span>
               </div>
             ) : audit.status === "completed" ? (
               <>
-                <div className="text-3xl font-bold text-green-700">
+                <div className="text-3xl font-bold text-green-700 dark:text-green-400">
                   ${filteredSavings.toFixed(2)}
                 </div>
-                <div className="text-sm text-gray-500">
+                <div className="text-sm text-gray-500 dark:text-gray-400">
                   potential monthly savings
                 </div>
               </>
             ) : (
-              <span className="text-red-600 font-medium">Failed</span>
+              <span className="text-red-600 dark:text-red-400 font-medium">Failed</span>
             )}
           </div>
         </div>
 
         {audit.status === "completed" && (
-          <div className="mt-4 pt-4 border-t border-gray-100">
+          <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
             <div className="flex gap-4 mb-2">
               <div className="text-sm">
-                <span className="text-gray-500">{(getAuditUI(audit.audit_type)?.resourceNoun || "resources").charAt(0).toUpperCase() + (getAuditUI(audit.audit_type)?.resourceNoun || "resources").slice(1)} analyzed: </span>
+                <span className="text-gray-500 dark:text-gray-400">{(getAuditUI(audit.audit_type)?.resourceNoun || "resources").charAt(0).toUpperCase() + (getAuditUI(audit.audit_type)?.resourceNoun || "resources").slice(1)} analyzed: </span>
                 <span className="font-medium">{audit.instance_count}</span>
               </div>
               <div className="text-sm">
-                <span className="text-gray-500">Findings: </span>
+                <span className="text-gray-500 dark:text-gray-400">Findings: </span>
                 <span className="font-medium">
                   {filteredRecs.length}
                   {hiddenBySavings > 0 && (
-                    <span className="text-gray-400 font-normal"> of {audit.recommendations.length}</span>
+                    <span className="text-gray-400 dark:text-gray-500 font-normal"> of {audit.recommendations.length}</span>
                   )}
                 </span>
               </div>
@@ -283,7 +283,7 @@ export default function AuditDetail() {
             <div className="flex flex-wrap gap-x-4 gap-y-1">
               {Object.entries(categoryCounts).map(([cat, count]) => (
                 <div key={cat} className="text-sm">
-                  <span className="text-gray-500">{getAllCategoryLabels()[cat] || cat}: </span>
+                  <span className="text-gray-500 dark:text-gray-400">{getAllCategoryLabels()[cat] || cat}: </span>
                   <span className="font-medium">{count}</span>
                 </div>
               ))}
@@ -292,25 +292,25 @@ export default function AuditDetail() {
         )}
 
         {audit.error && (
-          <div className="mt-4 bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">
+          <div className="mt-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded p-3 text-sm text-red-700 dark:text-red-400">
             {audit.error}
           </div>
         )}
       </div>
 
       {audit.audit_type === "full" && audit.child_audits && audit.child_audits.length > 0 && (
-        <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Service Progress</h3>
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-6">
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Service Progress</h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
             {audit.child_audits.map((child) => (
               <div
                 key={child.id}
                 className={`flex items-center gap-2 px-3 py-2 rounded text-sm ${
                   child.status === "completed"
-                    ? "bg-green-50 text-green-700"
+                    ? "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300"
                     : child.status === "failed"
-                      ? "bg-red-50 text-red-700"
-                      : "bg-blue-50 text-blue-700"
+                      ? "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                      : "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
                 }`}
               >
                 {child.status === "running" && (
@@ -331,18 +331,18 @@ export default function AuditDetail() {
             ))}
           </div>
           {audit.status === "running" && (
-            <div className="mt-3 text-xs text-gray-400">
+            <div className="mt-3 text-xs text-gray-400 dark:text-gray-500">
               Aggregation and deduplication will run after all services complete.
             </div>
           )}
           {audit.status === "consolidating" && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-purple-600 font-medium">
+            <div className="mt-3 flex items-center gap-2 text-xs text-purple-600 dark:text-purple-400 font-medium">
               <div className="animate-spin h-3 w-3 border-2 border-purple-600 border-t-transparent rounded-full"></div>
               Consolidating and deduplicating results across services...
             </div>
           )}
           {audit.status === "validating" && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-amber-600 font-medium">
+            <div className="mt-3 flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 font-medium">
               <div className="animate-spin h-3 w-3 border-2 border-amber-600 border-t-transparent rounded-full"></div>
               Validating recommendation accuracy...
             </div>
@@ -354,12 +354,12 @@ export default function AuditDetail() {
         <div className="flex items-center gap-4 mb-4">
           <SavingsFilter onThresholdChange={setMinSavings} />
           {resolvedCount > 0 && (
-            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer whitespace-nowrap">
+            <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer whitespace-nowrap">
               <input
                 type="checkbox"
                 checked={showResolved}
                 onChange={(e) => setShowResolved(e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
               />
               Show resolved ({resolvedCount})
             </label>
@@ -370,11 +370,11 @@ export default function AuditDetail() {
       {filteredRecs.length > 0 && (
         <div>
           <div className="flex items-center gap-3 mb-3">
-            <h3 className="text-lg font-semibold text-gray-800">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
               Recommendations
             </h3>
             {hiddenBySavings > 0 && (
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-gray-400 dark:text-gray-500">
                 {hiddenBySavings} hidden below ${minSavings} threshold
               </span>
             )}
@@ -388,7 +388,7 @@ export default function AuditDetail() {
       )}
 
       {audit.status === "completed" && audit.recommendations.length === 0 && (
-        <div className="text-center py-12 text-gray-500">
+        <div className="text-center py-12 text-gray-500 dark:text-gray-400">
           <p className="text-lg mb-2">No cost savings found</p>
           <p className="text-sm">
             Your {getAuditUI(audit.audit_type)?.label || audit.audit_type.toUpperCase()} {getAuditUI(audit.audit_type)?.resourceNoun || "resources"} appear to be well-optimized.
@@ -397,7 +397,7 @@ export default function AuditDetail() {
       )}
 
       {audit.status === "completed" && audit.recommendations.length > 0 && filteredRecs.length === 0 && (
-        <div className="text-center py-12 text-gray-500">
+        <div className="text-center py-12 text-gray-500 dark:text-gray-400">
           <p className="text-lg mb-2">All recommendations filtered out</p>
           <p className="text-sm">
             {audit.recommendations.length} recommendation{audit.recommendations.length !== 1 ? "s" : ""} below ${minSavings}/mo threshold.

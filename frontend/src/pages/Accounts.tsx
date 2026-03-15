@@ -87,7 +87,7 @@ export default function Accounts() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-gray-800">AWS Accounts</h2>
+        <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">AWS Accounts</h2>
         <button
           onClick={() => setShowForm(true)}
           className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700"
@@ -97,7 +97,7 @@ export default function Accounts() {
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4 text-sm">
+        <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded mb-4 text-sm">
           {error}
           <button
             onClick={() => setError("")}
@@ -109,7 +109,7 @@ export default function Accounts() {
       )}
 
       {showForm && (
-        <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 mb-6">
           <h3 className="text-lg font-semibold mb-4">Add AWS Account</h3>
           <AccountForm
             onSubmit={handleCreate}
@@ -119,7 +119,7 @@ export default function Accounts() {
       )}
 
       {accounts.length === 0 && !showForm ? (
-        <div className="text-center py-12 text-gray-500">
+        <div className="text-center py-12 text-gray-500 dark:text-gray-400">
           <p className="text-lg mb-2">No AWS accounts configured</p>
           <p className="text-sm">
             Add an account to start analyzing AWS costs.
@@ -130,18 +130,18 @@ export default function Accounts() {
           {accounts.map((acc) => (
             <div
               key={acc.id}
-              className="bg-white border border-gray-200 rounded-lg p-4"
+              className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4"
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="font-medium text-gray-800">{acc.name}</div>
-                  <div className="text-sm text-gray-500">
+                  <div className="font-medium text-gray-800 dark:text-gray-100">{acc.name}</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
                     {acc.aws_account_id || "Account ID unknown"} &middot;{" "}
                     {acc.default_region}
                   </div>
                   {testResult?.id === acc.id && (
                     <div
-                      className={`text-sm mt-1 ${testResult.success ? "text-green-600" : "text-red-600"}`}
+                      className={`text-sm mt-1 ${testResult.success ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
                     >
                       {testResult.message}
                     </div>
@@ -151,7 +151,7 @@ export default function Accounts() {
                   <button
                     onClick={() => handleTest(acc.id)}
                     disabled={testing === acc.id}
-                    className="border border-gray-300 px-3 py-1.5 rounded text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    className="border border-gray-300 dark:border-gray-600 px-3 py-1.5 rounded text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
                   >
                     {testing === acc.id ? "Testing..." : "Test Connection"}
                   </button>
@@ -166,13 +166,13 @@ export default function Accounts() {
                   ))}
                   <button
                     onClick={() => handleDelete(acc.id)}
-                    className="border border-red-200 text-red-600 px-3 py-1.5 rounded text-xs font-medium hover:bg-red-50"
+                    className="border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 px-3 py-1.5 rounded text-xs font-medium hover:bg-red-50 dark:hover:bg-red-900/30"
                   >
                     Delete
                   </button>
                 </div>
               </div>
-              <div className="mt-3 pt-3 border-t border-gray-100 flex justify-end">
+              <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex justify-end">
                 <button
                   onClick={() => handleAudit(acc.id, "full")}
                   className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-2 rounded text-sm font-medium hover:from-blue-700 hover:to-purple-700 transition-all"

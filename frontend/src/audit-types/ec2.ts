@@ -5,7 +5,7 @@ registerAuditUI({
   label: "EC2",
   resourceNoun: "instances",
   buttonColor: "bg-green-600 hover:bg-green-700",
-  badgeStyle: "bg-green-50 text-green-700 border-green-200",
+  badgeStyle: "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-800",
   categoryLabels: {
     "right-size": "Right-Size",
     stop: "Stop/Terminate",

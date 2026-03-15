@@ -5,7 +5,7 @@ registerAuditUI({
   label: "DynamoDB",
   resourceNoun: "tables",
   buttonColor: "bg-indigo-600 hover:bg-indigo-700",
-  badgeStyle: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  badgeStyle: "bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/40 dark:text-indigo-300 dark:border-indigo-800",
   categoryLabels: {
     "dynamodb-unused-table": "Unused Table",
     "dynamodb-over-provisioned-rcu": "Over-Provisioned RCU",
