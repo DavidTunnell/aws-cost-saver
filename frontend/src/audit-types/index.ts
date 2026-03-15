@@ -7,4 +7,5 @@ import "./nat";
 import "./lambda";
 import "./dynamodb";
 import "./elb";
+import "./opensearch";
 import "./full";

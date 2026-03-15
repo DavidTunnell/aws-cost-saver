@@ -10,6 +10,7 @@ import "../services/nat-audit-runner";
 import "../services/lambda-audit-runner";
 import "../services/dynamodb-audit-runner";
 import "../services/elb-audit-runner";
+import "../services/opensearch-audit-runner";
 import "../services/full-audit-runner";
 
 const router = Router();

@@ -41,6 +41,16 @@ const COMPUTE_CATEGORIES = new Set([
   "reserved-instance", "savings-plan",
 ]);
 
+// OpenSearch categories are self-deduplicated by opensearch-analyzer.ts.
+// opensearch-idle subsumes all others (same as EC2 stop/idle pattern).
+const OPENSEARCH_CATEGORIES = new Set([
+  "opensearch-idle", "opensearch-underutilized", "opensearch-oversized-storage",
+  "opensearch-old-engine", "opensearch-no-reserved", "opensearch-single-az",
+  "opensearch-unnecessary-master", "opensearch-gp2-to-gp3", "opensearch-warm-cold-candidate",
+  "opensearch-graviton-migration", "opensearch-overprovisioned-iops",
+  "opensearch-node-consolidation", "opensearch-jvm-pressure", "opensearch-cluster-health",
+]);
+
 function deterministicDedup(recs: DbRecommendation[]): DbRecommendation[] {
   // Step 1: Remove exact duplicates (same instance_id + same category → keep highest savings)
   const sorted = [...recs].sort((a, b) => b.estimated_savings - a.estimated_savings);
@@ -83,6 +93,17 @@ function deterministicDedup(recs: DbRecommendation[]): DbRecommendation[] {
       continue;
     }
 
+    // opensearch-idle subsumes all other opensearch-* recs for the same domain
+    const hasOpenSearchIdle = group.some((r) => r.category === "opensearch-idle");
+    if (hasOpenSearchIdle) {
+      for (const rec of group) {
+        if (rec.category === "opensearch-idle" || !OPENSEARCH_CATEGORIES.has(rec.category)) {
+          result.push(rec);
+        }
+      }
+      continue;
+    }
+
     // Handle right-size + graviton overlap: zero out the smaller saving
     const rightSize = group.find((r) => r.category === "right-size");
     const graviton = group.find((r) => r.category === "graviton-migrate");
@@ -114,7 +135,7 @@ function deterministicDedup(recs: DbRecommendation[]): DbRecommendation[] {
 
 // ─── LLM dedup pass ─────────────────────────────────────────────────────────
 
-const DEDUP_SYSTEM_PROMPT = `You are an AWS cost optimization expert reviewing recommendations from multiple audit services (EC2, RDS, S3, Lambda, DynamoDB, NAT Gateway, Load Balancers).
+const DEDUP_SYSTEM_PROMPT = `You are an AWS cost optimization expert reviewing recommendations from multiple audit services (EC2, RDS, S3, Lambda, DynamoDB, NAT Gateway, Load Balancers, OpenSearch).
 
 Your task: identify OVERLAPPING or DUPLICATE recommendations where the same underlying savings would be double-counted across services.
 
@@ -124,6 +145,7 @@ Known cross-service overlaps to check:
 - Lambda + DynamoDB: if Lambda invocations are being reduced/eliminated, associated DynamoDB read/write capacity savings driven by that Lambda may overlap.
 - NAT Gateway + EC2: stopping EC2 instances reduces NAT traffic. Don't count both the EC2 compute savings and the full NAT data processing savings if the NAT savings are caused by the EC2 stoppage.
 - ELB consolidation may render individual ELB idle recommendations redundant.
+- OpenSearch: multiple recommendations for the same domain are typically independent and additive (e.g., node consolidation + reserved instance are separate savings). Do NOT remove opensearch-* recommendations unless they genuinely duplicate a recommendation from another service.
 
 IMPORTANT: When in doubt, do NOT remove. Only remove when you are confident the savings genuinely overlap. It is better to slightly over-count than to accidentally eliminate a real, independent recommendation.
 
@@ -156,8 +178,14 @@ async function llmDedup(recs: DbRecommendation[]): Promise<number[]> {
     byResource.get(key)!.push(rec);
   }
 
-  // Only send resources that have multiple recommendations (potential overlaps)
-  const multiRecResources = [...byResource.entries()].filter(([, group]) => group.length > 1);
+  // Only send resources that have multiple recommendations from DIFFERENT services.
+  // Same-service groups (e.g., all opensearch-*) are already deduplicated by their own analyzer.
+  const multiRecResources = [...byResource.entries()]
+    .filter(([, group]) => group.length > 1)
+    .filter(([, group]) => {
+      const prefixes = new Set(group.map((r) => r.category.split("-")[0]));
+      return prefixes.size > 1;
+    });
   if (multiRecResources.length === 0) return [];
 
   let prompt = `Review these recommendations grouped by resource for cross-service overlaps.\n\n`;
