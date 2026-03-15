@@ -3,7 +3,7 @@ import type { DedupResult } from "./full-audit-analyzer";
 
 // ─── Severity helper (local copy — same thresholds used across all analyzers) ─
 
-function getSeverity(savings: number): "high" | "medium" | "low" {
+export function getSeverity(savings: number): "high" | "medium" | "low" {
   if (savings > 50) return "high";
   if (savings >= 10) return "medium";
   return "low";
@@ -27,7 +27,7 @@ const RATIO_TOLERANCE = 0.02;
 
 // ─── Part A: Deterministic validation (no LLM) ──────────────────────────────
 
-function deterministicValidate(recs: DedupResult[]): { recs: DedupResult[]; fixes: string[] } {
+export function deterministicValidate(recs: DedupResult[]): { recs: DedupResult[]; fixes: string[] } {
   const fixes: string[] = [];
 
   for (const rec of recs) {

@@ -51,7 +51,7 @@ const OPENSEARCH_CATEGORIES = new Set([
   "opensearch-node-consolidation", "opensearch-jvm-pressure", "opensearch-cluster-health",
 ]);
 
-function deterministicDedup(recs: DbRecommendation[]): DbRecommendation[] {
+export function deterministicDedup(recs: DbRecommendation[]): DbRecommendation[] {
   // Step 1: Remove exact duplicates (same instance_id + same category → keep highest savings)
   const sorted = [...recs].sort((a, b) => b.estimated_savings - a.estimated_savings);
   const seenKeys = new Set<string>();
