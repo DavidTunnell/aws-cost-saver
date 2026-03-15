@@ -66,8 +66,8 @@ export default function CostChart({ data, accounts, isDark }: CostChartProps) {
           stroke={gridColor}
         />
         <Tooltip
-          formatter={(value: number) => [formatDollar(value), undefined]}
-          labelFormatter={formatMonth}
+          formatter={(value) => [formatDollar(Number(value)), undefined]}
+          labelFormatter={(label) => formatMonth(String(label))}
           contentStyle={{
             backgroundColor: isDark ? "#1f2937" : "#ffffff",
             border: `1px solid ${isDark ? "#374151" : "#e5e7eb"}`,
