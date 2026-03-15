@@ -100,6 +100,32 @@ export const startAudit = (accountId: number, auditType: string = 'ec2') =>
     body: JSON.stringify({ account_id: accountId, audit_type: auditType }),
   });
 
+// Cost Trends
+export interface CostDataPoint {
+  month: string;
+  cost: number;
+  currency: string;
+}
+
+export interface AccountCostTrend {
+  accountId: number;
+  accountName: string;
+  dataPoints: CostDataPoint[];
+  error: string | null;
+}
+
+export interface CostTrendsResponse {
+  months: number;
+  service: string | null;
+  accounts: AccountCostTrend[];
+}
+
+export const getCostTrends = (months: number = 12, service?: string) => {
+  const params = new URLSearchParams({ months: String(months) });
+  if (service) params.set("service", service);
+  return request<CostTrendsResponse>(`/cost-trends?${params}`);
+};
+
 export const resolveRecommendation = (
   auditId: number,
   recId: number,

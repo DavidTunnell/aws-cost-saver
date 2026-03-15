@@ -20,6 +20,7 @@ import express from "express";
 import cors from "cors";
 import accountsRouter from "./routes/accounts";
 import auditsRouter from "./routes/audits";
+import costTrendsRouter from "./routes/cost-trends";
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "8000", 10);
@@ -29,6 +30,7 @@ app.use(express.json());
 
 app.use("/api/accounts", accountsRouter);
 app.use("/api/audits", auditsRouter);
+app.use("/api/cost-trends", costTrendsRouter);
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });

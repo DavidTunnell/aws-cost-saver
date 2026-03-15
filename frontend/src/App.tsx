@@ -3,6 +3,7 @@ import { useDarkMode } from "./hooks/useDarkMode";
 import Accounts from "./pages/Accounts";
 import Audits from "./pages/Audits";
 import AuditDetail from "./pages/AuditDetail";
+import CostTrends from "./pages/CostTrends";
 
 function App() {
   const [isDark, toggleDark] = useDarkMode();
@@ -30,6 +31,14 @@ function App() {
             >
               Audits
             </NavLink>
+            <NavLink
+              to="/cost-trends"
+              className={({ isActive }) =>
+                `px-3 py-1 rounded text-sm font-medium ${isActive ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"}`
+              }
+            >
+              Cost Trends
+            </NavLink>
           </div>
           <button
             onClick={toggleDark}
@@ -53,6 +62,7 @@ function App() {
           <Route path="/" element={<Accounts />} />
           <Route path="/audits" element={<Audits />} />
           <Route path="/audits/:id" element={<AuditDetail />} />
+          <Route path="/cost-trends" element={<CostTrends />} />
         </Routes>
       </main>
     </div>
