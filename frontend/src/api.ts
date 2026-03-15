@@ -138,6 +138,30 @@ export const getCostTrends = (
 export const getAccountServices = (accountId: number) =>
   request<{ services: ServiceInfo[] }>(`/reports/services?accountId=${accountId}`);
 
+// Solutions
+export interface SolutionsData {
+  console: string;
+  cli: string;
+}
+
+export const getSolutions = (data: {
+  category: string;
+  action: string;
+  instanceId: string;
+  instanceType: string;
+  metadata: Record<string, string>;
+}) =>
+  request<SolutionsData>("/solutions/generate", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+export const executeSolutions = (commands: string, accountId: number) =>
+  request<{ success: boolean; output: string }>("/solutions/execute", {
+    method: "POST",
+    body: JSON.stringify({ commands, accountId }),
+  });
+
 export const resolveRecommendation = (
   auditId: number,
   recId: number,
