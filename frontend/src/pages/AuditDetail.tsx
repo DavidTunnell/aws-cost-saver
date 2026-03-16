@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { getAudit, resolveRecommendation, type AuditDetail as AuditDetailType, type Recommendation } from "../api";
 import RecommendationCard from "../components/RecommendationCard";
@@ -12,22 +12,27 @@ const SEVERITY_COLORS: Record<string, string> = {
   low: "#16a34a",
 };
 
-function buildPdfHtml(audit: AuditDetailType) {
+function buildPdfHtml(
+  audit: AuditDetailType,
+  filteredRecs: Recommendation[],
+  filteredSavings: number,
+  categoryCounts: Record<string, number>,
+  minSavings: number,
+  showResolved: boolean
+) {
   const ui = getAuditUI(audit.audit_type);
   const catLabels = getAllCategoryLabels();
-  const categoryCounts = audit.recommendations.reduce((acc, r) => {
-    acc[r.category] = (acc[r.category] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
+  const totalRecs = audit.recommendations.length;
+  const isFiltered = filteredRecs.length !== totalRecs;
 
-  const recRows = audit.recommendations
+  const recRows = filteredRecs
     .sort((a, b) => b.estimated_savings - a.estimated_savings)
     .map((rec: Recommendation) => {
       let reasoning = "";
       try { reasoning = JSON.parse(rec.details).reasoning || ""; } catch {}
       const sColor = SEVERITY_COLORS[rec.severity] || "#6b7280";
       return `
-        <tr>
+        <tr style="page-break-inside:avoid;">
           <td style="padding:8px;border-bottom:1px solid #e5e7eb;font-family:monospace;font-size:12px;vertical-align:top;">
             ${rec.instance_id}<br/>
             <span style="color:#6b7280;font-family:sans-serif;">${rec.instance_name || ""}</span>
@@ -57,40 +62,46 @@ function buildPdfHtml(audit: AuditDetailType) {
 
   const resourceNoun = ui ? ui.resourceNoun.charAt(0).toUpperCase() + ui.resourceNoun.slice(1) : "Resources";
 
-  return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"/>
-<title>AWS Cost Audit - ${audit.account_name}</title>
-<style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 40px; color: #1f2937; font-size: 14px; }
-  h1 { margin: 0 0 4px; font-size: 22px; }
-  .meta { color: #6b7280; font-size: 12px; margin-bottom: 16px; }
-  .summary { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
-  .savings { font-size: 28px; font-weight: 700; color: #15803d; }
-  table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; padding: 8px; border-bottom: 2px solid #d1d5db; font-size: 12px; color: #6b7280; text-transform: uppercase; }
-  th:last-child { text-align: right; }
-  @media print { body { margin: 20px; } }
-</style>
-</head><body>
-<h1>AWS ${ui?.label || audit.audit_type.toUpperCase()} Cost Savings Report</h1>
-<p class="meta">${audit.account_name} &mdash; Generated ${new Date().toLocaleDateString()}</p>
-<div class="summary">
+  const findingsLabel = isFiltered
+    ? `<strong>${filteredRecs.length}</strong> <span style="color:#9ca3af;">of ${totalRecs}</span>`
+    : `<strong>${filteredRecs.length}</strong>`;
+
+  const filterNotes: string[] = [];
+  if (minSavings > 0) filterNotes.push(`min savings &ge; $${minSavings.toFixed(2)}/mo`);
+  if (!showResolved) {
+    const resolvedCount = audit.recommendations.filter(r => r.resolution).length;
+    if (resolvedCount > 0) filterNotes.push(`${resolvedCount} resolved hidden`);
+  }
+  const filterLine = filterNotes.length > 0
+    ? `<div style="font-size:11px;color:#9ca3af;margin-top:6px;font-style:italic;">Filters applied: ${filterNotes.join(" | ")}</div>`
+    : "";
+
+  return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;margin:0;padding:20px;color:#1f2937;font-size:14px;">
+<h1 style="margin:0 0 4px;font-size:22px;">AWS ${ui?.label || audit.audit_type.toUpperCase()} Cost Savings Report</h1>
+<p style="color:#6b7280;font-size:12px;margin:0 0 16px;">${audit.account_name} &mdash; Generated ${new Date().toLocaleDateString()}</p>
+<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:24px;">
   <div style="display:flex;justify-content:space-between;align-items:center;">
     <div>
-      <div style="font-size:13px;color:#6b7280;">${resourceNoun} analyzed: <strong>${audit.instance_count}</strong> &nbsp;|&nbsp; Findings: <strong>${audit.recommendations.length}</strong></div>
+      <div style="font-size:13px;color:#6b7280;">${resourceNoun} analyzed: <strong>${audit.instance_count}</strong> &nbsp;|&nbsp; Findings: ${findingsLabel}</div>
       <div style="font-size:12px;color:#6b7280;margin-top:4px;">${summaryItems}</div>
+      ${filterLine}
     </div>
     <div style="text-align:right;">
-      <div class="savings">$${audit.total_savings_monthly.toFixed(2)}/mo</div>
+      <div style="font-size:28px;font-weight:700;color:#15803d;">$${filteredSavings.toFixed(2)}/mo</div>
       <div style="font-size:12px;color:#6b7280;">potential savings</div>
     </div>
   </div>
 </div>
-<table>
-  <thead><tr><th>Resource</th><th>Category</th><th>Recommendation</th><th>Savings</th></tr></thead>
+<table style="width:100%;border-collapse:collapse;">
+  <thead><tr>
+    <th style="text-align:left;padding:8px;border-bottom:2px solid #d1d5db;font-size:12px;color:#6b7280;text-transform:uppercase;">Resource</th>
+    <th style="text-align:left;padding:8px;border-bottom:2px solid #d1d5db;font-size:12px;color:#6b7280;text-transform:uppercase;">Category</th>
+    <th style="text-align:left;padding:8px;border-bottom:2px solid #d1d5db;font-size:12px;color:#6b7280;text-transform:uppercase;">Recommendation</th>
+    <th style="text-align:right;padding:8px;border-bottom:2px solid #d1d5db;font-size:12px;color:#6b7280;text-transform:uppercase;">Savings</th>
+  </tr></thead>
   <tbody>${recRows}</tbody>
 </table>
-</body></html>`;
+</div>`;
 }
 
 export default function AuditDetail() {
@@ -99,16 +110,7 @@ export default function AuditDetail() {
   const [error, setError] = useState("");
   const [minSavings, setMinSavings] = useState(1);
   const [showResolved, setShowResolved] = useState(false);
-
-  const exportPdf = useCallback(() => {
-    if (!audit || audit.status !== "completed") return;
-    const html = buildPdfHtml(audit);
-    const win = window.open("", "_blank");
-    if (!win) return;
-    win.document.write(html);
-    win.document.close();
-    setTimeout(() => win.print(), 300);
-  }, [audit]);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -180,6 +182,33 @@ export default function AuditDetail() {
     {} as Record<string, number>
   );
 
+  const exportPdf = async () => {
+    if (!audit || audit.status !== "completed" || exporting) return;
+    setExporting(true);
+    try {
+      const html = buildPdfHtml(audit, filteredRecs, filteredSavings, categoryCounts, minSavings, showResolved);
+      const container = document.createElement("div");
+      container.innerHTML = html;
+
+      const { default: html2pdf } = await import("html2pdf.js");
+      await html2pdf()
+        .set({
+          margin: [10, 10, 10, 10],
+          filename: `aws-cost-audit-${audit.account_name.replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.pdf`,
+          image: { type: "jpeg", quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: "mm", format: "a4", orientation: "landscape" },
+        })
+        .from(container.firstElementChild as HTMLElement)
+        .save();
+    } catch (err: any) {
+      console.error("PDF export failed:", err);
+      setError(err.message || "PDF export failed");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -192,12 +221,17 @@ export default function AuditDetail() {
         {audit.status === "completed" && audit.recommendations.length > 0 && (
           <button
             onClick={exportPdf}
-            className="flex items-center gap-2 bg-gray-800 dark:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-700 dark:hover:bg-gray-600 transition-colors"
+            disabled={exporting}
+            className="flex items-center gap-2 bg-gray-800 dark:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-700 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            Export PDF
+            {exporting ? (
+              <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            )}
+            {exporting ? "Generating..." : "Export PDF"}
           </button>
         )}
       </div>
