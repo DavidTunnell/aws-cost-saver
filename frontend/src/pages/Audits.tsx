@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { getAudits, type Audit } from "../api";
+import { getAudits, deleteAudit, deleteAllAudits, type Audit } from "../api";
 import { getAuditUI } from "../audit-registry";
 import "../audit-types";
 
@@ -16,6 +16,28 @@ export default function Audits() {
 
   const load = () => {
     getAudits().then(setAudits).catch((e) => setError(e.message));
+  };
+
+  const handleDeleteAll = async () => {
+    if (!confirm("Delete all audit history? This cannot be undone.")) return;
+    try {
+      await deleteAllAudits();
+      setAudits([]);
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  const handleDelete = async (e: React.MouseEvent, id: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm("Delete this audit record? This cannot be undone.")) return;
+    try {
+      await deleteAudit(id);
+      setAudits((prev) => prev.filter((a) => a.id !== id));
+    } catch (err: any) {
+      setError(err.message);
+    }
   };
 
   useEffect(() => {
@@ -34,7 +56,17 @@ export default function Audits() {
 
   return (
     <div>
-      <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Audit History</h2>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Audit History</h2>
+        {audits.length > 0 && (
+          <button
+            onClick={handleDeleteAll}
+            className="text-sm px-3 py-1.5 rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300 dark:hover:bg-red-900/60 transition-colors"
+          >
+            Delete All
+          </button>
+        )}
+      </div>
 
       {error && (
         <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded mb-4 text-sm">
@@ -91,6 +123,15 @@ export default function Audits() {
                   >
                     {audit.status}
                   </span>
+                  <button
+                    onClick={(e) => handleDelete(e, audit.id)}
+                    className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors p-1"
+                    title="Delete audit"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </button>
                 </div>
               </div>
               {audit.error && (

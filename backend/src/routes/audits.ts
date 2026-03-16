@@ -111,6 +111,21 @@ router.post("/", async (req: Request, res: Response) => {
   res.status(201).json({ id: auditId, status: "running" });
 });
 
+// Delete all audit history
+router.delete("/", (_req: Request, res: Response) => {
+  db.prepare(`DELETE FROM audits`).run();
+  res.json({ success: true });
+});
+
+// Delete a single audit (cascades to recommendations and child audits)
+router.delete("/:id", (req: Request, res: Response) => {
+  const audit = db.prepare(`SELECT id FROM audits WHERE id = ?`).get(req.params.id);
+  if (!audit) return res.status(404).json({ error: "Audit not found" });
+
+  db.prepare(`DELETE FROM audits WHERE id = ?`).run(req.params.id);
+  res.json({ success: true });
+});
+
 // Resolve or unresolve a recommendation
 router.patch("/:auditId/recommendations/:recId", (req: Request, res: Response) => {
   const { auditId, recId } = req.params;

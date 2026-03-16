@@ -92,6 +92,12 @@ export interface AuditDetail extends Audit {
 
 export const getAudits = () => request<Audit[]>("/audits");
 
+export const deleteAudit = (id: number) =>
+  request<{ success: boolean }>(`/audits/${id}`, { method: "DELETE" });
+
+export const deleteAllAudits = () =>
+  request<{ success: boolean }>("/audits", { method: "DELETE" });
+
 export const getAudit = (id: number) => request<AuditDetail>(`/audits/${id}`);
 
 export const startAudit = (accountId: number, auditType: string = 'ec2') =>
