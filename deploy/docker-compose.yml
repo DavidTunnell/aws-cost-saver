@@ -1,0 +1,39 @@
+services:
+  app:
+    image: aws-cost-saver:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+      - PORT=8000
+    volumes:
+      - ./data:/app/backend/data
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8000/api/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+  caddy_config:

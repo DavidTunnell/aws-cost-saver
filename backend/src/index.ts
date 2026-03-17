@@ -26,7 +26,9 @@ import solutionsRouter from "./routes/solutions";
 const app = express();
 const PORT = parseInt(process.env.PORT || "8000", 10);
 
-app.use(cors({ origin: "http://localhost:5173" }));
+app.use(cors({
+  origin: process.env.NODE_ENV === "production" ? undefined : "http://localhost:5173",
+}));
 app.use(express.json());
 
 app.use("/api/accounts", accountsRouter);
@@ -37,6 +39,16 @@ app.use("/api/solutions", solutionsRouter);
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
+
+// In production, serve frontend static files
+if (process.env.NODE_ENV === "production") {
+  const frontendPath = path.join(__dirname, "..", "..", "frontend", "dist");
+  app.use(express.static(frontendPath));
+  // SPA fallback: any non-API route serves index.html
+  app.get("*", (_req, res) => {
+    res.sendFile(path.join(frontendPath, "index.html"));
+  });
+}
 
 app.listen(PORT, () => {
   console.log(`Backend running at http://localhost:${PORT}`);
