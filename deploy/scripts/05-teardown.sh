@@ -23,6 +23,7 @@ if [[ -f "$INSTANCE_ID_FILE" ]]; then
   aws ec2 terminate-instances --region "$REGION" --instance-ids "$INSTANCE_ID" 2>/dev/null || true
   echo "Waiting for instance to terminate..."
   aws ec2 wait instance-terminated --region "$REGION" --instance-ids "$INSTANCE_ID" 2>/dev/null || true
+  audit_log "DESTROY" "EC2Instance" "$INSTANCE_ID" "terminated"
   rm -f "$INSTANCE_ID_FILE"
   echo "Instance terminated."
 fi
@@ -32,6 +33,7 @@ if [[ -f "$EIP_ALLOC_FILE" ]]; then
   EIP_ALLOC=$(cat "$EIP_ALLOC_FILE")
   echo_step "Releasing Elastic IP: $EIP_ALLOC"
   aws ec2 release-address --region "$REGION" --allocation-id "$EIP_ALLOC" 2>/dev/null || true
+  audit_log "DESTROY" "ElasticIP" "$EIP_ALLOC" "released"
   rm -f "$EIP_ALLOC_FILE" "$EIP_IP_FILE"
   echo "Elastic IP released."
 fi
@@ -45,7 +47,25 @@ if [[ -f "$SG_ID_FILE" ]]; then
   aws ec2 delete-security-group --region "$REGION" --group-id "$SG_ID" 2>/dev/null || {
     echo "  Could not delete security group (may still have dependencies). Try again later."
   }
+  audit_log "DESTROY" "SecurityGroup" "$SG_ID" "deleted"
   rm -f "$SG_ID_FILE"
+fi
+
+# Delete key pair
+aws ec2 describe-key-pairs --region "$REGION" --key-names "$KEY_NAME" >/dev/null 2>&1 && {
+  echo_step "Deleting key pair: $KEY_NAME"
+  aws ec2 delete-key-pair --region "$REGION" --key-name "$KEY_NAME" 2>/dev/null || true
+  audit_log "DESTROY" "KeyPair" "$KEY_NAME" "deleted"
+  rm -f "$SSH_KEY"
+  echo "Key pair deleted."
+}
+
+# Update audit log in project
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+DEPLOY_AUDIT_LOG="$REPO_ROOT/deploy/aws-resources.json"
+if [[ -f "$AUDIT_LOG" ]]; then
+  cp "$AUDIT_LOG" "$DEPLOY_AUDIT_LOG"
+  echo "Audit log updated: $DEPLOY_AUDIT_LOG"
 fi
 
 echo ""

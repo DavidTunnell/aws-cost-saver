@@ -1,0 +1,88 @@
+{
+  "deployment": {
+    "created_at": "2026-03-17T03:22:46.249Z",
+    "region": "us-east-1",
+    "account": "774401913422",
+    "account_name": "Webapper DevOps"
+  },
+  "resources": [
+    {
+      "type": "SecurityGroup",
+      "id": "sg-0b2b0d7079f5ed50f",
+      "region": "us-east-1",
+      "created_at": "2026-03-17T03:22:46.250Z",
+      "details": "name=aws-cost-saver-sg",
+      "destroyed": false
+    },
+    {
+      "type": "KeyPair",
+      "id": "aws-cost-saver-key",
+      "region": "us-east-1",
+      "created_at": "2026-03-17T03:22:46.250Z",
+      "details": "file=~/.ssh/aws-cost-saver-key.pem",
+      "destroyed": false
+    },
+    {
+      "type": "EC2Instance",
+      "id": "i-04945e6cdea492d11",
+      "region": "us-east-1",
+      "created_at": "2026-03-17T03:22:46.250Z",
+      "details": "type=t3.small ami=ami-02dfbd4ff395f2a1b",
+      "destroyed": false
+    },
+    {
+      "type": "ElasticIP",
+      "id": "eipalloc-0d9e3f960c100aca8",
+      "region": "us-east-1",
+      "created_at": "2026-03-17T03:22:46.250Z",
+      "details": "ip=52.205.224.115",
+      "destroyed": false
+    },
+    {
+      "type": "EIPAssociation",
+      "id": "52.205.224.115",
+      "region": "us-east-1",
+      "created_at": "2026-03-17T03:22:46.250Z",
+      "details": "instance=i-04945e6cdea492d11",
+      "destroyed": false
+    }
+  ],
+  "actions": [
+    {
+      "timestamp": "2026-03-17T03:22:46.250Z",
+      "action": "CREATE",
+      "resource_type": "SecurityGroup",
+      "resource_id": "sg-0b2b0d7079f5ed50f"
+    },
+    {
+      "timestamp": "2026-03-17T03:22:46.250Z",
+      "action": "CREATE",
+      "resource_type": "KeyPair",
+      "resource_id": "aws-cost-saver-key"
+    },
+    {
+      "timestamp": "2026-03-17T03:22:46.250Z",
+      "action": "CREATE",
+      "resource_type": "EC2Instance",
+      "resource_id": "i-04945e6cdea492d11"
+    },
+    {
+      "timestamp": "2026-03-17T03:22:46.250Z",
+      "action": "CREATE",
+      "resource_type": "ElasticIP",
+      "resource_id": "eipalloc-0d9e3f960c100aca8"
+    },
+    {
+      "timestamp": "2026-03-17T03:22:46.250Z",
+      "action": "CREATE",
+      "resource_type": "EIPAssociation",
+      "resource_id": "52.205.224.115"
+    }
+  ],
+  "teardown_commands": [
+    "aws ec2 terminate-instances --region us-east-1 --instance-ids i-04945e6cdea492d11",
+    "aws ec2 release-address --region us-east-1 --allocation-id eipalloc-0d9e3f960c100aca8",
+    "aws ec2 delete-security-group --region us-east-1 --group-id sg-0b2b0d7079f5ed50f",
+    "aws ec2 delete-key-pair --region us-east-1 --key-name aws-cost-saver-key"
+  ]
+}

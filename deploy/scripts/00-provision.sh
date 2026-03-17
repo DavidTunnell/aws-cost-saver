@@ -29,6 +29,7 @@ SG_ID=$(aws ec2 create-security-group --region "$REGION" \
 }
 
 echo "$SG_ID" > "$SG_ID_FILE"
+audit_log "CREATE" "SecurityGroup" "$SG_ID" "name=$SECURITY_GROUP_NAME vpc=$VPC_ID"
 
 # Add ingress rules (ignore errors if rules already exist)
 # HTTP/HTTPS open to the world, SSH restricted to deployer's IP
@@ -59,12 +60,18 @@ echo "AMI: $AMI_ID"
 
 echo_step "Launching EC2 instance: ${INSTANCE_TYPE}"
 
-# Check if key pair exists
+# Create key pair if it doesn't exist
 aws ec2 describe-key-pairs --region "$REGION" --key-names "$KEY_NAME" >/dev/null 2>&1 || {
-  echo "ERROR: SSH key pair '$KEY_NAME' not found in region $REGION."
-  echo "Create one with: aws ec2 create-key-pair --region $REGION --key-name $KEY_NAME --query KeyMaterial --output text > ~/.ssh/${KEY_NAME}.pem && chmod 600 ~/.ssh/${KEY_NAME}.pem"
-  exit 1
+  echo "Creating SSH key pair: $KEY_NAME"
+  mkdir -p "$(dirname "$SSH_KEY")"
+  aws ec2 create-key-pair --region "$REGION" \
+    --key-name "$KEY_NAME" \
+    --query "KeyMaterial" --output text > "$SSH_KEY"
+  chmod 600 "$SSH_KEY"
+  echo "SSH key saved to: $SSH_KEY"
+  audit_log "CREATE" "KeyPair" "$KEY_NAME" "file=$SSH_KEY"
 }
+echo "Using key pair: $KEY_NAME"
 
 INSTANCE_ID=$(aws ec2 run-instances --region "$REGION" \
   --image-id "$AMI_ID" \
@@ -76,6 +83,7 @@ INSTANCE_ID=$(aws ec2 run-instances --region "$REGION" \
   --query "Instances[0].InstanceId" --output text)
 
 echo "$INSTANCE_ID" > "$INSTANCE_ID_FILE"
+audit_log "CREATE" "EC2Instance" "$INSTANCE_ID" "type=$INSTANCE_TYPE ami=$AMI_ID"
 echo "Instance launched: $INSTANCE_ID"
 
 echo_step "Waiting for instance to be running..."
@@ -88,6 +96,7 @@ EIP_ALLOC=$(aws ec2 allocate-address --region "$REGION" \
   --tag-specifications "ResourceType=elastic-ip,Tags=[{Key=Name,Value=${APP_NAME}}]" \
   --query "AllocationId" --output text)
 echo "$EIP_ALLOC" > "$EIP_ALLOC_FILE"
+audit_log "CREATE" "ElasticIP" "$EIP_ALLOC" "allocation"
 
 EIP_IP=$(aws ec2 associate-address --region "$REGION" \
   --instance-id "$INSTANCE_ID" \
@@ -97,6 +106,14 @@ EIP_IP=$(aws ec2 associate-address --region "$REGION" \
     --allocation-ids "$EIP_ALLOC" \
     --query "Addresses[0].PublicIp" --output text)
 echo "$EIP_IP" > "$EIP_IP_FILE"
+audit_log "CREATE" "EIPAssociation" "$EIP_IP" "instance=$INSTANCE_ID allocation=$EIP_ALLOC"
+
+# Write audit log summary to project deploy directory
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+DEPLOY_AUDIT_LOG="$REPO_ROOT/deploy/aws-resources.json"
+cp "$AUDIT_LOG" "$DEPLOY_AUDIT_LOG"
+echo ""
+echo "Audit log written to: $DEPLOY_AUDIT_LOG"
 
 echo ""
 echo "============================================"
