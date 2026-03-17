@@ -1,0 +1,6 @@
+# Replace with your domain for automatic HTTPS via Let's Encrypt
+# e.g., cost-saver.example.com
+# Or use :80 for HTTP-only (no domain required)
+:80 {
+    reverse_proxy app:8000
+}
