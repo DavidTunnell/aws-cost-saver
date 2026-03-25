@@ -286,24 +286,27 @@ export async function analyzeWithClaude(
   if (runningInstances.length > 0) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      throw new Error(
-        `ANTHROPIC_API_KEY is not set. Env keys available: ${Object.keys(process.env).filter(k => k.includes("ANTHROPIC")).join(", ") || "none matching ANTHROPIC"}`
-      );
-    }
-    const client = new Anthropic({ apiKey });
-
-    const CHUNK_SIZE = 25;
-    if (runningInstances.length > CHUNK_SIZE) {
-      llmRecs = await analyzeLlmInChunks(client, data, CHUNK_SIZE);
+      console.warn("ANTHROPIC_API_KEY not set — skipping LLM analysis for EC2");
     } else {
-      const prompt = buildPrompt(data);
-      const response = await client.messages.create({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 4096,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: prompt }],
-      });
-      llmRecs = parseResponse(response);
+      try {
+        const client = new Anthropic({ apiKey, maxRetries: 5 });
+
+        const CHUNK_SIZE = 25;
+        if (runningInstances.length > CHUNK_SIZE) {
+          llmRecs = await analyzeLlmInChunks(client, data, CHUNK_SIZE);
+        } else {
+          const prompt = buildPrompt(data);
+          const response = await client.messages.create({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 4096,
+            system: SYSTEM_PROMPT,
+            messages: [{ role: "user", content: prompt }],
+          });
+          llmRecs = parseResponse(response);
+        }
+      } catch (err: any) {
+        console.warn(`EC2 LLM analysis failed: ${err.message}`);
+      }
     }
   }
 

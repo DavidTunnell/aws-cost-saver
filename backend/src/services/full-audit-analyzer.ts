@@ -161,7 +161,7 @@ function getAnthropicClient(): Anthropic | null {
     console.warn("[Full Audit] No ANTHROPIC_API_KEY — skipping LLM pass");
     return null;
   }
-  return new Anthropic({ apiKey });
+  return new Anthropic({ apiKey, maxRetries: 5 });
 }
 
 async function llmDedup(recs: DbRecommendation[]): Promise<number[]> {

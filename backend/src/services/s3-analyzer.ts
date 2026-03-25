@@ -239,20 +239,24 @@ export async function analyzeS3WithClaude(
     if (!apiKey) {
       console.warn("ANTHROPIC_API_KEY not set — skipping LLM analysis for S3");
     } else {
-      const client = new Anthropic({ apiKey });
+      try {
+        const client = new Anthropic({ apiKey, maxRetries: 5 });
 
-      const CHUNK_SIZE = 30;
-      if (data.buckets.length > CHUNK_SIZE) {
-        llmRecs = await analyzeS3LlmInChunks(client, data, CHUNK_SIZE);
-      } else {
-        const prompt = buildS3Prompt(data);
-        const response = await client.messages.create({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 4096,
-          system: S3_SYSTEM_PROMPT,
-          messages: [{ role: "user", content: prompt }],
-        });
-        llmRecs = parseResponse(response);
+        const CHUNK_SIZE = 30;
+        if (data.buckets.length > CHUNK_SIZE) {
+          llmRecs = await analyzeS3LlmInChunks(client, data, CHUNK_SIZE);
+        } else {
+          const prompt = buildS3Prompt(data);
+          const response = await client.messages.create({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 4096,
+            system: S3_SYSTEM_PROMPT,
+            messages: [{ role: "user", content: prompt }],
+          });
+          llmRecs = parseResponse(response);
+        }
+      } catch (err: any) {
+        console.warn(`S3 LLM analysis failed: ${err.message}`);
       }
     }
   }

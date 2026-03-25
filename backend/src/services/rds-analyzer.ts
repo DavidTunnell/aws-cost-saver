@@ -431,20 +431,24 @@ export async function analyzeRDSWithClaude(
     if (!apiKey) {
       console.warn("ANTHROPIC_API_KEY not set — skipping LLM analysis for RDS");
     } else {
-      const client = new Anthropic({ apiKey });
+      try {
+        const client = new Anthropic({ apiKey, maxRetries: 5 });
 
-      const CHUNK_SIZE = 25;
-      if (availableInstances.length > CHUNK_SIZE) {
-        llmRecs = await analyzeRDSLlmInChunks(client, data, CHUNK_SIZE);
-      } else {
-        const prompt = buildRDSPrompt(data);
-        const response = await client.messages.create({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 4096,
-          system: RDS_SYSTEM_PROMPT,
-          messages: [{ role: "user", content: prompt }],
-        });
-        llmRecs = parseResponse(response);
+        const CHUNK_SIZE = 25;
+        if (availableInstances.length > CHUNK_SIZE) {
+          llmRecs = await analyzeRDSLlmInChunks(client, data, CHUNK_SIZE);
+        } else {
+          const prompt = buildRDSPrompt(data);
+          const response = await client.messages.create({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 4096,
+            system: RDS_SYSTEM_PROMPT,
+            messages: [{ role: "user", content: prompt }],
+          });
+          llmRecs = parseResponse(response);
+        }
+      } catch (err: any) {
+        console.warn(`RDS LLM analysis failed: ${err.message}`);
       }
     }
   }
