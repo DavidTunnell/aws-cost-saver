@@ -243,7 +243,7 @@ export async function analyzeLambdaWithClaude(
       console.warn("ANTHROPIC_API_KEY not set — skipping LLM analysis for Lambda");
     } else {
       try {
-        const client = new Anthropic({ apiKey });
+        const client = new Anthropic({ apiKey, maxRetries: 5 });
         const prompt = buildLambdaPrompt(data, activeFunctions);
         const response = await client.messages.create({
           model: "claude-sonnet-4-20250514",

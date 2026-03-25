@@ -338,7 +338,7 @@ export async function analyzeDynamoDBWithClaude(
       console.warn("ANTHROPIC_API_KEY not set — skipping LLM analysis for DynamoDB");
     } else {
       try {
-        const client = new Anthropic({ apiKey });
+        const client = new Anthropic({ apiKey, maxRetries: 5 });
         const prompt = buildDynamoDBPrompt(data, activeTables);
         const response = await client.messages.create({
           model: "claude-sonnet-4-20250514",

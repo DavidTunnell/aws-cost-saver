@@ -122,7 +122,7 @@ async function llmValidate(recs: DedupResult[]): Promise<Map<number, string>> {
     return warnings;
   }
 
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({ apiKey, maxRetries: 5 });
   const prompt = buildValidationPrompt(recs);
 
   try {

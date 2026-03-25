@@ -251,7 +251,7 @@ export async function analyzeNatWithClaude(
       );
     } else {
       try {
-        const client = new Anthropic({ apiKey });
+        const client = new Anthropic({ apiKey, maxRetries: 5 });
         const prompt = buildNatPrompt(data);
         const response = await client.messages.create({
           model: "claude-sonnet-4-20250514",
